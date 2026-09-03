@@ -1,0 +1,9 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lumberjack
+      POSTGRES_PASSWORD: lumberjack
+      POSTGRES_DB: lumberjack
+    ports:
+      - "5432:5432"
