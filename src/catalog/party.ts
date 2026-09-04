@@ -1,4 +1,5 @@
 import type { Platform, PartyStatus, PrismaClient } from "@prisma/client";
+import { canAppearOnWatchlist } from "@/domain/gates";
 
 export type AddLotInput = {
   partyId: string;
@@ -30,7 +31,10 @@ export async function addLot(
       },
     });
 
-    if (party.status === "upcoming" && party.watchlistPosition == null) {
+    if (
+      canAppearOnWatchlist({ status: party.status, hasOpenLot: true }) &&
+      party.watchlistPosition == null
+    ) {
       const agg = await tx.party.aggregate({
         _max: { watchlistPosition: true },
       });
@@ -76,8 +80,17 @@ export async function enqueueWatchlist(
   db: PrismaClient,
   partyId: string,
 ): Promise<void> {
-  const party = await db.party.findUniqueOrThrow({ where: { id: partyId } });
-  if (party.status !== "upcoming" || party.watchlistPosition != null) return;
+  const party = await db.party.findUniqueOrThrow({
+    where: { id: partyId },
+    include: { lots: true },
+  });
+  const hasOpenLot = party.lots.some((lot) => lot.closedAt == null);
+  if (
+    !canAppearOnWatchlist({ status: party.status, hasOpenLot }) ||
+    party.watchlistPosition != null
+  ) {
+    return;
+  }
 
   const agg = await db.party.aggregate({
     _max: { watchlistPosition: true },

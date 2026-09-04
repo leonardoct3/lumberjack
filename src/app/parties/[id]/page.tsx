@@ -7,6 +7,7 @@ import {
   actionUpdateParty,
 } from "@/app/actions/party";
 import { prisma } from "@/db/client";
+import { canAppearOnWatchlist } from "@/domain/gates";
 import { TZ } from "@/domain/timezone";
 
 const PLATFORMS = [
@@ -99,6 +100,11 @@ export default async function PartyDetailPage({
   ].sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
 
   const upcoming = party.status === "upcoming";
+  const hasOpenLot = party.lots.some((lot) => lot.closedAt == null);
+  const watchlistEligible = canAppearOnWatchlist({
+    status: party.status,
+    hasOpenLot,
+  });
 
   return (
     <main>
@@ -148,7 +154,7 @@ export default async function PartyDetailPage({
         <button type="submit">Salvar</button>
       </form>
 
-      {upcoming ? (
+      {watchlistEligible ? (
         <>
           {party.watchlistPosition == null ? (
             <form action={actionEnqueueWatchlist}>
