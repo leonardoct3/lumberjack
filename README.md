@@ -53,6 +53,10 @@ npm run connector  # unofficial WhatsApp listener (QR on first run)
 | `npm run connector` | Baileys connector |
 | `npm test` | Vitest (serial file execution — tests share one Postgres) |
 
+## UI
+
+Dark theme (noite / lima), single `720px` breakpoint (tables + top nav above; cards + bottom nav below). Plain CSS — no Tailwind.
+
 ## Out of v1
 
 No official-platform scrape, capital allocation, purchase ledger, chat digest, or LLM classification.
