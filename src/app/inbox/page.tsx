@@ -55,7 +55,7 @@ export default async function InboxPage() {
       <h1>Inbox</h1>
 
       <div className="two-col">
-        <section>
+        <section className="stack">
           <h2>Candidatos</h2>
           {candidates.length === 0 ? (
             <p>Nenhum candidato</p>
@@ -128,7 +128,7 @@ export default async function InboxPage() {
           )}
         </section>
 
-        <section>
+        <section className="stack">
           <h2>Órfãos</h2>
           {orphans.length === 0 ? (
             <p>Nenhum órfão</p>
