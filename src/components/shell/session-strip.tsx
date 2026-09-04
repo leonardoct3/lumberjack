@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ArrowRight, CircleAlert, QrCode } from "lucide-react";
 import { sessionBanner } from "@/components/ui/session-banner";
 
 export function SessionStrip({
@@ -14,14 +15,20 @@ export function SessionStrip({
   if (!banner || pathname === "/login") return null;
   const cls =
     banner.tone === "danger"
-      ? "border-destructive text-destructive"
-      : "border-primary text-primary";
+      ? "border-destructive/25 bg-destructive/8 text-destructive"
+      : "border-primary/25 bg-primary/8 text-primary";
+  const Icon = banner.tone === "danger" ? CircleAlert : QrCode;
   return (
     <Link
       href="/setup"
-      className={`mb-4 block rounded-[10px] border px-3 py-2 text-sm no-underline ${cls}`}
+      className={`group mb-6 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium no-underline transition-colors hover:bg-card ${cls}`}
     >
-      {banner.text}
+      <Icon className="size-4 shrink-0" aria-hidden="true" />
+      <span className="flex-1">{banner.text}</span>
+      <span className="hidden text-xs font-normal opacity-70 sm:inline">
+        Revisar conexão
+      </span>
+      <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
     </Link>
   );
 }

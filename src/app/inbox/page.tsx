@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import {
   InboxBoard,
   type InboxCandidate,
@@ -6,6 +7,8 @@ import {
 import { prisma } from "@/db/client";
 import { matchParty } from "@/domain/match";
 import { toDatetimeLocal } from "@/lib/datetime";
+
+export const metadata: Metadata = { title: "Inbox de sinais" };
 
 export default async function InboxPage() {
   const [candidates, orphans, upcoming] = await Promise.all([
@@ -56,8 +59,7 @@ export default async function InboxPage() {
   }));
 
   return (
-    <main className="space-y-6">
-      <h1 className="text-2xl font-semibold">Inbox</h1>
+    <main>
       <InboxBoard
         candidates={mappedCandidates}
         orphans={mappedOrphans}

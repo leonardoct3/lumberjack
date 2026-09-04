@@ -4,6 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  CalendarDays,
+  ExternalLink,
+  Flame,
+  ListOrdered,
+  LogOut,
+  TicketCheck,
+} from "lucide-react";
+import {
   actionCloseLot,
   actionMoveWatchlist,
   actionRemoveFromWatchlist,
@@ -11,6 +22,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader, SectionHeader } from "@/components/ui/page-header";
 import { formatWhen } from "@/lib/datetime";
 import { runAction } from "@/lib/run-action";
 import { TOAST } from "@/lib/toast-copy";
@@ -28,10 +41,16 @@ export type WatchlistItem = {
   openLotIds: string[];
 };
 
-function heatCell(heat: number | null) {
-  if (heat == null) return "—";
+function HeatValue({ heat }: { heat: number | null }) {
+  if (heat == null) {
+    return <span className="font-mono text-sm text-muted-foreground">—</span>;
+  }
+
   return (
-    <span className="text-primary font-semibold tabular-nums">{heat}</span>
+    <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold text-primary tabular-nums">
+      <Flame className="size-3.5 fill-primary/20" aria-hidden="true" />
+      {heat}
+    </span>
   );
 }
 
@@ -62,10 +81,7 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
   function actions(item: WatchlistItem) {
     const busy = pendingIds.has(item.id);
     return (
-      <div className="flex flex-wrap gap-2">
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/parties/${item.id}`}>Detalhe</Link>
-        </Button>
+      <div className="flex flex-wrap items-center gap-1">
         {item.canMoveUp ? (
           <Button
             type="button"
@@ -80,6 +96,7 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
               submit(item.id, actionMoveWatchlist, fd, TOAST.up);
             }}
           >
+            <ArrowUp />
             Subir
           </Button>
         ) : null}
@@ -97,23 +114,10 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
               submit(item.id, actionMoveWatchlist, fd, TOAST.down);
             }}
           >
+            <ArrowDown />
             Descer
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          aria-busy={busy || undefined}
-          onClick={() => {
-            const fd = new FormData();
-            fd.set("partyId", item.id);
-            submit(item.id, actionRemoveFromWatchlist, fd, TOAST.leftQueue);
-          }}
-        >
-          Sair da fila
-        </Button>
         {item.openLotIds.map((lotId) => (
           <Button
             key={lotId}
@@ -128,84 +132,220 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
               submit(item.id, actionCloseLot, fd, TOAST.lotClosed);
             }}
           >
+            <TicketCheck />
             Fechar lote
           </Button>
         ))}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          aria-busy={busy || undefined}
+          className="hover:text-destructive"
+          onClick={() => {
+            const fd = new FormData();
+            fd.set("partyId", item.id);
+            submit(item.id, actionRemoveFromWatchlist, fd, TOAST.leftQueue);
+          }}
+        >
+          <LogOut />
+          Sair
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/parties/${item.id}`}>
+            Detalhe
+            <ArrowRight />
+          </Link>
+        </Button>
       </div>
     );
   }
 
-  if (items.length === 0) {
-    return (
-      <Card className="gap-2 p-6">
-        <p>Nenhuma festa na fila</p>
-        <p className="text-muted-foreground text-sm">
-          <Link href="/inbox">Inbox</Link> · <Link href="/heat">Calor</Link>
-        </p>
-      </Card>
-    );
-  }
+  const scored = items.filter((item) => item.heat != null);
+  const hottest = scored.reduce<WatchlistItem | null>((best, item) => {
+    if (!best || (item.heat ?? -Infinity) > (best.heat ?? -Infinity)) return item;
+    return best;
+  }, null);
+  const openLots = items.reduce((total, item) => total + item.openLotIds.length, 0);
 
   return (
-    <>
-      <div className="hidden space-y-0 md:block">
-        {items.map((item, index) => (
-          <div
-            key={item.id}
-            className="border-border flex flex-wrap items-center gap-x-4 gap-y-2 border-b py-2 text-sm last:border-b-0"
-          >
-            <span className="text-muted-foreground w-6 shrink-0 tabular-nums">
-              {index + 1}.
-            </span>
-            <strong className="min-w-[8rem] shrink-0">{item.name}</strong>
-            <span className="text-muted-foreground shrink-0">
-              {formatWhen(item.eventAt)}
-            </span>
-            <span className="min-w-[4rem] shrink-0">
-              {item.lotLabels || "—"}
-            </span>
-            <span className="w-10 shrink-0">{heatCell(item.heat)}</span>
-            {item.previousEdition ? (
-              <Badge variant="outline">edição anterior</Badge>
-            ) : null}
-            <div className="ml-auto">{actions(item)}</div>
-          </div>
-        ))}
+    <div className="space-y-7">
+      <PageHeader
+        eyebrow="Operação"
+        title="Fila de compra"
+        description="Priorize as próximas compras e acompanhe os sinais que podem mudar sua decisão."
+        icon={ListOrdered}
+        actions={
+          <Button asChild variant="outline">
+            <Link href="/heat">
+              Ver calor
+              <Flame />
+            </Link>
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-3 overflow-hidden rounded-[var(--radius)] border border-border/80 bg-card">
+        <div className="p-4 md:p-5">
+          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">
+            Na fila
+          </p>
+          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">
+            {String(items.length).padStart(2, "0")}
+          </p>
+        </div>
+        <div className="border-x border-border/80 p-4 md:p-5">
+          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">
+            Lotes abertos
+          </p>
+          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">
+            {String(openLots).padStart(2, "0")}
+          </p>
+        </div>
+        <div className="min-w-0 p-4 md:p-5">
+          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">
+            Mais quente
+          </p>
+          <p className="mt-2 truncate text-sm font-semibold text-primary md:text-base">
+            {hottest?.name ?? "—"}
+          </p>
+        </div>
       </div>
 
-      <ol className="space-y-3 md:hidden">
-        {items.map((item, index) => (
-          <li key={item.id}>
-            <Card className="p-4">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className="text-muted-foreground w-6 tabular-nums">
-                  {index + 1}.
-                </span>
-                <strong>{item.name}</strong>
-                {item.previousEdition ? (
-                  <Badge variant="outline">edição anterior</Badge>
-                ) : null}
+      <section className="space-y-4">
+        <SectionHeader
+          title="Prioridade atual"
+          count={items.length}
+          description="A ordem define o foco da operação."
+        />
+
+        {items.length === 0 ? (
+          <EmptyState
+            title="Nenhuma festa na fila"
+            description="Confirme uma festa na Inbox ou avalie os sinais de calor para começar."
+            icon={ListOrdered}
+            action={
+              <div className="flex gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/inbox">Abrir Inbox</Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/heat">Ver calor</Link>
+                </Button>
               </div>
-              <p className="text-muted-foreground mt-2 text-sm">
-                Data {formatWhen(item.eventAt)}
-              </p>
-              <p className="text-sm">Lote {item.lotLabels || "—"}</p>
-              <p className="text-sm">
-                Link{" "}
-                {item.lotUrl ? (
-                  <a href={item.lotUrl} rel="noreferrer">
-                    {item.lotUrl}
-                  </a>
-                ) : (
-                  "—"
-                )}
-              </p>
-              <p className="text-sm">Calor {heatCell(item.heat)}</p>
-              <div className="mt-3">{actions(item)}</div>
+            }
+          />
+        ) : (
+          <>
+            <Card className="hidden gap-0 overflow-hidden p-0 md:block">
+              <div className="grid grid-cols-[68px_minmax(180px,1.4fr)_minmax(150px,1fr)_minmax(120px,.8fr)_72px_auto] items-center border-b border-border/80 bg-muted/35 px-4 py-3 font-mono text-[9px] font-semibold tracking-[0.09em] text-muted-foreground uppercase">
+                <span>Rank</span>
+                <span>Festa</span>
+                <span>Quando</span>
+                <span>Lote</span>
+                <span>Calor</span>
+                <span className="text-right">Ações</span>
+              </div>
+              <div>
+                {items.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="group grid grid-cols-[68px_minmax(180px,1.4fr)_minmax(150px,1fr)_minmax(120px,.8fr)_72px_auto] items-center border-b border-border/65 px-4 py-3 transition-colors last:border-0 hover:bg-muted/35"
+                  >
+                    <span className="font-mono text-lg font-medium text-muted-foreground/70 tabular-nums group-first:text-primary">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0 pr-3">
+                      <Link
+                        href={`/parties/${item.id}`}
+                        className="block truncate text-sm font-semibold text-foreground no-underline hover:text-primary"
+                      >
+                        {item.name}
+                      </Link>
+                      {item.previousEdition ? (
+                        <Badge className="mt-1.5" variant="outline">
+                          edição anterior
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <CalendarDays className="size-3.5" />
+                      {formatWhen(item.eventAt)}
+                    </span>
+                    <div className="min-w-0 pr-3 text-xs">
+                      <span className="block truncate">{item.lotLabels || "—"}</span>
+                      {item.lotUrl ? (
+                        <a
+                          href={item.lotUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground no-underline hover:text-primary"
+                        >
+                          Abrir venda <ExternalLink className="size-3" />
+                        </a>
+                      ) : null}
+                    </div>
+                    <HeatValue heat={item.heat} />
+                    <div className="flex justify-end">{actions(item)}</div>
+                  </div>
+                ))}
+              </div>
             </Card>
-          </li>
-        ))}
-      </ol>
-    </>
+
+            <ol className="space-y-3 md:hidden">
+              {items.map((item, index) => (
+                <li key={item.id}>
+                  <Card className="gap-4 overflow-hidden p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-background/50 font-mono text-sm font-semibold text-muted-foreground">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <Link
+                            href={`/parties/${item.id}`}
+                            className="truncate font-semibold text-foreground no-underline"
+                          >
+                            {item.name}
+                          </Link>
+                          <HeatValue heat={item.heat} />
+                        </div>
+                        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <CalendarDays className="size-3.5" />
+                          {formatWhen(item.eventAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/35 px-3 py-2.5 text-xs">
+                      <span className="min-w-0 truncate">
+                        {item.lotLabels || "Sem lote aberto"}
+                      </span>
+                      {item.lotUrl ? (
+                        <a
+                          href={item.lotUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label="Abrir página de venda"
+                          className="shrink-0 text-muted-foreground hover:text-primary"
+                        >
+                          <ExternalLink className="size-4" />
+                        </a>
+                      ) : null}
+                    </div>
+                    {item.previousEdition ? (
+                      <Badge variant="outline">edição anterior</Badge>
+                    ) : null}
+                    <div className="-mx-1 flex flex-wrap border-t border-border/60 pt-3">
+                      {actions(item)}
+                    </div>
+                  </Card>
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+      </section>
+    </div>
   );
 }

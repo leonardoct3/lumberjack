@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import {
   HeatBoard,
   type HeatRow,
@@ -5,6 +6,8 @@ import {
 import { prisma } from "@/db/client";
 import { canRankOnHeat } from "@/domain/gates";
 import { latestSnapshot } from "@/jobs/refresh-heat";
+
+export const metadata: Metadata = { title: "Mapa de calor" };
 
 const WINDOWS = [1, 3, 7] as const;
 type Window = (typeof WINDOWS)[number];

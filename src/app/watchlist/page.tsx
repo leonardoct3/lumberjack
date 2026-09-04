@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { hasPreviousEdition, listWatchlist } from "@/catalog/watchlist";
 import {
   WatchlistBoard,
@@ -5,6 +6,8 @@ import {
 } from "@/components/watchlist/watchlist-board";
 import { prisma } from "@/db/client";
 import { latestSnapshot } from "@/jobs/refresh-heat";
+
+export const metadata: Metadata = { title: "Fila de compra" };
 
 export default async function WatchlistPage() {
   const [parties, catalog] = await Promise.all([
@@ -31,8 +34,7 @@ export default async function WatchlistPage() {
   });
 
   return (
-    <main className="space-y-6">
-      <h1 className="text-2xl font-semibold">Watchlist</h1>
+    <main>
       <WatchlistBoard items={items} />
     </main>
   );
