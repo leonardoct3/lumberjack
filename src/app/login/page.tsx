@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { COOKIE, makeSessionToken } from "@/auth/cookie";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 async function login(formData: FormData) {
   "use server";
@@ -23,21 +25,22 @@ async function login(formData: FormData) {
 
 export default function LoginPage() {
   return (
-    <main
-      className="page"
-      style={{ minHeight: "80vh", display: "grid", placeItems: "center" }}
-    >
-      <Card>
-        <h1>Lumberjack</h1>
-        <form action={login} className="stack">
-          <label htmlFor="password">Senha</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-          />
-          <Button type="submit">Entrar</Button>
+    <main className="grid min-h-[80vh] place-items-center">
+      <Card className="w-full max-w-sm p-6">
+        <h1 className="mb-4 text-2xl font-semibold">Lumberjack</h1>
+        <form action={login} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="password">Senha</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+            />
+          </div>
+          <Button type="submit" className="w-full">
+            Entrar
+          </Button>
         </form>
       </Card>
     </main>
