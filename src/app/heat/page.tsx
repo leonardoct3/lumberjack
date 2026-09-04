@@ -1,4 +1,9 @@
 import Link from "next/link";
+import { Banner } from "@/components/ui/banner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
 import { prisma } from "@/db/client";
 import { canRankOnHeat } from "@/domain/gates";
 import { TZ } from "@/domain/timezone";
@@ -24,7 +29,7 @@ function dash(value: number | null | undefined): string {
   return value == null ? "—" : String(value);
 }
 
-function emphasize(active: boolean, children: string) {
+function emphasize(active: boolean, children: React.ReactNode) {
   return active ? <strong>{children}</strong> : children;
 }
 
@@ -72,6 +77,12 @@ export default async function HeatPage({
       return b.score - a.score;
     });
 
+  const latestComputedAt = rows.reduce<Date | null>((latest, row) => {
+    if (!row.computedAt) return latest;
+    if (!latest || row.computedAt > latest) return row.computedAt;
+    return latest;
+  }, null);
+
   function href(next: { janela?: string; grupo?: string }) {
     const q = new URLSearchParams();
     const j = next.janela ?? params.janela;
@@ -82,11 +93,62 @@ export default async function HeatPage({
     return s ? `/heat?${s}` : "/heat";
   }
 
+  const columns = [
+    { key: "name", header: "Nome" },
+    { key: "demand1d", header: emphasize(janela === 1, "Procura 1") },
+    { key: "demand3d", header: emphasize(janela === 3, "Procura 3") },
+    { key: "demand7d", header: emphasize(janela === 7, "Procura 7") },
+    { key: "offer1d", header: emphasize(janela === 1, "Oferta 1") },
+    { key: "offer3d", header: emphasize(janela === 3, "Oferta 3") },
+    { key: "uniqueDemandSenders7d", header: "Autores 7d" },
+    { key: "daysToEvent", header: "Dias" },
+    { key: "score", header: "Score" },
+    { key: "computedAt", header: "Atualizado em" },
+  ];
+
+  const tableRows = rows.map((row) => ({
+    id: row.id,
+    cells: {
+      name: <Link href={`/parties/${row.id}`}>{row.name}</Link>,
+      demand1d: emphasize(janela === 1, dash(row.demand1d)),
+      demand3d: emphasize(janela === 3, dash(row.demand3d)),
+      demand7d: emphasize(janela === 7, dash(row.demand7d)),
+      offer1d: emphasize(janela === 1, dash(row.offer1d)),
+      offer3d: emphasize(janela === 3, dash(row.offer3d)),
+      uniqueDemandSenders7d: dash(row.uniqueDemandSenders7d),
+      daysToEvent: dash(row.daysToEvent),
+      score:
+        row.score == null ? (
+          "—"
+        ) : (
+          <span className="score">{row.score}</span>
+        ),
+      computedAt: row.computedAt ? formatUpdatedAt(row.computedAt) : "—",
+    },
+  }));
+
   return (
-    <main>
+    <main className="page stack">
       <h1>Calor</h1>
 
-      <form>
+      {latestComputedAt ? (
+        <Banner tone="muted">
+          Atualizado em {formatUpdatedAt(latestComputedAt)}
+        </Banner>
+      ) : null}
+
+      <p>
+        {WINDOWS.map((w, i) => (
+          <span key={w}>
+            {i > 0 ? " " : null}
+            <Link href={href({ janela: String(w) })}>
+              {janela === w ? <Badge tone="accent">{w}d</Badge> : `${w}d`}
+            </Link>
+          </span>
+        ))}
+      </p>
+
+      <form method="GET">
         <label>
           Grupo
           <select name="grupo" defaultValue={grupo}>
@@ -99,55 +161,21 @@ export default async function HeatPage({
           </select>
         </label>
         {janela ? <input type="hidden" name="janela" value={String(janela)} /> : null}
-        <button type="submit">Filtrar</button>
+        <Button type="submit" variant="ghost">
+          Filtrar
+        </Button>
       </form>
 
-      <p>
-        Janela{" "}
-        {WINDOWS.map((w, i) => (
-          <span key={w}>
-            {i > 0 ? " | " : null}
-            <Link href={href({ janela: String(w) })}>
-              {janela === w ? <strong>{w}d</strong> : `${w}d`}
-            </Link>
-          </span>
-        ))}
-      </p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Nome</th>
-            <th>{emphasize(janela === 1, "Procura 1")}</th>
-            <th>{emphasize(janela === 3, "Procura 3")}</th>
-            <th>{emphasize(janela === 7, "Procura 7")}</th>
-            <th>{emphasize(janela === 1, "Oferta 1")}</th>
-            <th>{emphasize(janela === 3, "Oferta 3")}</th>
-            <th>Autores 7d</th>
-            <th>Dias</th>
-            <th>Score</th>
-            <th>Atualizado em</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td>
-                <Link href={`/parties/${row.id}`}>{row.name}</Link>
-              </td>
-              <td>{emphasize(janela === 1, dash(row.demand1d))}</td>
-              <td>{emphasize(janela === 3, dash(row.demand3d))}</td>
-              <td>{emphasize(janela === 7, dash(row.demand7d))}</td>
-              <td>{emphasize(janela === 1, dash(row.offer1d))}</td>
-              <td>{emphasize(janela === 3, dash(row.offer3d))}</td>
-              <td>{dash(row.uniqueDemandSenders7d)}</td>
-              <td>{dash(row.daysToEvent)}</td>
-              <td>{dash(row.score)}</td>
-              <td>{row.computedAt ? formatUpdatedAt(row.computedAt) : "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        columns={columns}
+        rows={tableRows}
+        empty={
+          <Card>
+            <p>Nenhuma festa no calor</p>
+            <a href="/inbox">Inbox</a>
+          </Card>
+        }
+      />
     </main>
   );
 }

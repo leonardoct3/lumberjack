@@ -3,6 +3,8 @@ import {
   actionLinkOrphan,
   actionRejectCandidate,
 } from "@/app/actions/catalog";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { prisma } from "@/db/client";
 import { matchParty } from "@/domain/match";
 import { TZ } from "@/domain/timezone";
@@ -49,17 +51,17 @@ export default async function InboxPage() {
   }));
 
   return (
-    <main>
+    <main className="page stack">
       <h1>Inbox</h1>
 
-      <section>
-        <h2>Candidatos</h2>
-        {candidates.length === 0 ? (
-          <p>Nenhum candidato</p>
-        ) : (
-          <ul>
-            {candidates.map((candidate) => (
-              <li key={candidate.id}>
+      <div className="two-col">
+        <section>
+          <h2>Candidatos</h2>
+          {candidates.length === 0 ? (
+            <p>Nenhum candidato</p>
+          ) : (
+            candidates.map((candidate) => (
+              <Card key={candidate.id}>
                 <p>{candidate.source.text}</p>
                 <form action={actionConfirmCandidate}>
                   <input type="hidden" name="candidateId" value={candidate.id} />
@@ -113,28 +115,28 @@ export default async function InboxPage() {
                       max={5}
                     />
                   </label>
-                  <button type="submit">Confirmar</button>
+                  <Button type="submit">Confirmar</Button>
                 </form>
                 <form action={actionRejectCandidate}>
                   <input type="hidden" name="candidateId" value={candidate.id} />
-                  <button type="submit">Rejeitar</button>
+                  <Button type="submit" variant="danger">
+                    Rejeitar
+                  </Button>
                 </form>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+              </Card>
+            ))
+          )}
+        </section>
 
-      <section>
-        <h2>Órfãos</h2>
-        {orphans.length === 0 ? (
-          <p>Nenhum órfão</p>
-        ) : (
-          <ul>
-            {orphans.map((message) => {
+        <section>
+          <h2>Órfãos</h2>
+          {orphans.length === 0 ? (
+            <p>Nenhum órfão</p>
+          ) : (
+            orphans.map((message) => {
               const suggested = matchParty(message.text, matchInputs);
               return (
-                <li key={message.id}>
+                <Card key={message.id}>
                   <p>
                     {message.sender.name ?? message.sender.waId}: {message.text}
                   </p>
@@ -153,14 +155,14 @@ export default async function InboxPage() {
                         ))}
                       </select>
                     </label>
-                    <button type="submit">Vincular</button>
+                    <Button type="submit">Vincular</Button>
                   </form>
-                </li>
+                </Card>
               );
-            })}
-          </ul>
-        )}
-      </section>
+            })
+          )}
+        </section>
+      </div>
     </main>
   );
 }
