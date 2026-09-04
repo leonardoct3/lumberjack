@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { COOKIE, makeSessionToken } from "@/auth/cookie";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 async function login(formData: FormData) {
   "use server";
@@ -21,17 +23,23 @@ async function login(formData: FormData) {
 
 export default function LoginPage() {
   return (
-    <main>
-      <form action={login}>
-        <label htmlFor="password">Senha</label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-        />
-        <button type="submit">Entrar</button>
-      </form>
+    <main
+      className="page"
+      style={{ minHeight: "80vh", display: "grid", placeItems: "center" }}
+    >
+      <Card>
+        <h1>Lumberjack</h1>
+        <form action={login} className="stack">
+          <label htmlFor="password">Senha</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+          />
+          <Button type="submit">Entrar</Button>
+        </form>
+      </Card>
     </main>
   );
 }
