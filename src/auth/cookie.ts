@@ -6,6 +6,9 @@ export function authDisabled(): boolean {
 }
 
 export function makeSessionToken(password: string, secret: string): string {
+  if (!password || !secret) {
+    throw new Error("password and secret must be non-empty");
+  }
   return sha256Hex(`${password}:${secret}`);
 }
 
@@ -14,7 +17,7 @@ export function isValidSession(
   password: string,
   secret: string,
 ): boolean {
-  if (!token) return false;
+  if (!token || !password || !secret) return false;
   return token === makeSessionToken(password, secret);
 }
 

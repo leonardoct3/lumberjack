@@ -64,4 +64,19 @@ describe("isValidSession", () => {
     expect(isValidSession("", password, secret)).toBe(false);
     expect(isValidSession(undefined, password, secret)).toBe(false);
   });
+
+  it("rejects empty password or secret", () => {
+    const token = makeSessionToken(password, secret);
+    expect(isValidSession(token, "", secret)).toBe(false);
+    expect(isValidSession(token, password, "")).toBe(false);
+    expect(isValidSession(token, "", "")).toBe(false);
+  });
+});
+
+describe("makeSessionToken empty inputs", () => {
+  it("throws when password or secret is empty", () => {
+    expect(() => makeSessionToken("", "sec")).toThrow();
+    expect(() => makeSessionToken("pw", "")).toThrow();
+    expect(() => makeSessionToken("", "")).toThrow();
+  });
 });

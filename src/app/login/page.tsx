@@ -6,7 +6,7 @@ async function login(formData: FormData) {
   "use server";
   const password = String(formData.get("password") ?? "");
   const secret = process.env.AUTH_PASSWORD ?? "";
-  if (password !== process.env.AUTH_PASSWORD) {
+  if (!password || !secret || password !== secret) {
     return;
   }
 
