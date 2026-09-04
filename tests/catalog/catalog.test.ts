@@ -6,6 +6,7 @@ import { rejectCandidate } from "@/catalog/reject";
 import { unlinkSignal } from "@/catalog/unlink";
 import { markPastParties } from "@/catalog/mark-past";
 import { linkOrphan } from "@/catalog/link-orphan";
+import { addLot } from "@/catalog/party";
 import { closeLot, homeDestination, moveWatchlist } from "@/catalog/watchlist";
 
 const now = new Date("2026-09-03T15:00:00Z");
@@ -224,5 +225,37 @@ describe("catalog", () => {
 
   it("homeDestination is heat when inbox and watchlist are empty", async () => {
     expect(await homeDestination(prisma)).toBe("/heat");
+  });
+
+  it("addLot on upcoming party with null position sets position", async () => {
+    const party = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        status: "upcoming",
+        watchlistPosition: null,
+      },
+    });
+
+    const result = await addLot(prisma, {
+      partyId: party.id,
+      label: "1º lote",
+      url: "https://example.com/onix",
+      price: 80,
+      platform: "sympla",
+    });
+
+    const lot = await prisma.lot.findUniqueOrThrow({ where: { id: result.lotId } });
+    expect(lot).toMatchObject({
+      partyId: party.id,
+      label: "1º lote",
+      url: "https://example.com/onix",
+      officialPrice: 80,
+      platform: "sympla",
+      closedAt: null,
+    });
+    expect(lot.openedAt).toBeInstanceOf(Date);
+    expect((await prisma.party.findUniqueOrThrow({ where: { id: party.id } })).watchlistPosition).toBe(1);
   });
 });
