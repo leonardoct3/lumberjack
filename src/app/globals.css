@@ -1,171 +1,67 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
 :root {
-  color-scheme: dark;
-  --bg: #0c0a0f;
-  --surface: #16131c;
-  --line: #2a2633;
-  --text: #f4f1ea;
-  --muted: #9a93a5;
-  --accent: #c8f542;
-  --danger: #f0718b;
+  --background: #0c0a0f;
+  --foreground: #f4f1ea;
+  --card: #16131c;
+  --card-foreground: #f4f1ea;
+  --popover: #16131c;
+  --popover-foreground: #f4f1ea;
+  --primary: #c8f542;
+  --primary-foreground: #0c0a0f;
+  --secondary: #16131c;
+  --secondary-foreground: #f4f1ea;
+  --muted: #16131c;
+  --muted-foreground: #9a93a5;
+  --accent: #16131c;
+  --accent-foreground: #f4f1ea;
+  --destructive: #f0718b;
+  --border: #2a2633;
+  --input: #2a2633;
+  --ring: #c8f542;
   --radius: 10px;
-  --pad: 1rem;
+  --sidebar: #0c0a0f;
+  --sidebar-foreground: #f4f1ea;
+  --sidebar-border: #2a2633;
+  --sidebar-accent: #16131c;
+  --sidebar-accent-foreground: #c8f542;
+  --font-geist: var(--font-geist-sans);
 }
 
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  min-height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --font-sans: var(--font-geist);
 }
 
-a {
-  color: var(--text);
-  text-decoration: underline;
-  text-decoration-color: var(--line);
-}
-a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+html { color-scheme: dark; }
+
+body {
+  @apply bg-background text-foreground antialiased;
 }
 
-input, select, textarea {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.4rem 0.6rem;
-  font: inherit;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.btn {
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  padding: 0.4rem 0.75rem;
-  font: inherit;
-  cursor: pointer;
-  background: transparent;
-  color: var(--text);
-}
-.btn--primary { background: var(--accent); color: #0c0a0f; border-color: var(--accent); }
-.btn--ghost { background: transparent; color: var(--text); }
-.btn--danger { background: transparent; color: var(--danger); border-color: var(--danger); }
-
-.badge {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-  font-size: 0.75rem;
-  border: 1px solid var(--line);
-  color: var(--muted);
-}
-.badge--accent { color: #0c0a0f; background: var(--accent); border-color: var(--accent); }
-.badge--danger { color: var(--danger); border-color: var(--danger); }
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: var(--pad);
-}
-
-.banner {
-  border-radius: var(--radius);
-  padding: 0.6rem var(--pad);
-  border: 1px solid var(--line);
-  color: var(--muted);
-}
-.banner--accent { border-color: var(--accent); color: var(--accent); }
-.banner--danger { border-color: var(--danger); color: var(--danger); }
-
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th, .data-table td {
-  text-align: left;
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--line);
-}
-.data-table .score { color: var(--accent); font-variant-numeric: tabular-nums; }
-
-.shell-nav {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  padding: var(--pad);
-  border-bottom: 1px solid var(--line);
-}
-.shell-nav a { color: var(--muted); text-decoration: none; }
-.shell-nav a.is-active { color: var(--accent); }
-
-.page { padding: var(--pad); padding-bottom: 5rem; max-width: 1100px; margin: 0 auto; }
-.shell-banner {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 0 var(--pad);
-}
-.stack { display: flex; flex-direction: column; gap: var(--pad); }
-ol.stack {
-  counter-reset: rank;
-  list-style: none;
-  margin: 0;
-  padding-left: 0;
-}
-ol.stack > li {
-  counter-increment: rank;
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-start;
-}
-ol.stack > li::before {
-  content: counter(rank) ".";
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  min-width: 1.5rem;
-  padding-top: 0.2rem;
-}
-ol.stack > li > * { flex: 1; }
-.row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-.two-col { display: grid; gap: var(--pad); }
-.heat-score { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 700; }
-
-@media (min-width: 720px) {
-  .page { padding-bottom: var(--pad); }
-  .two-col { grid-template-columns: 1fr 1fr; }
-  .data-table--cards .data-table__card-label { display: none; }
-}
-
-@media (max-width: 719px) {
-  .shell-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    border-bottom: none;
-    border-top: 1px solid var(--line);
-    background: var(--bg);
-    justify-content: space-around;
-    z-index: 10;
-  }
-  .data-table thead { display: none; }
-  .data-table, .data-table tbody, .data-table tr, .data-table td {
-    display: block;
-    width: 100%;
-    border: 0;
-  }
-  .data-table tr {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: var(--pad);
-    margin-bottom: var(--pad);
-  }
-  .data-table td { display: flex; justify-content: space-between; gap: 1rem; }
-  .data-table__card-label { color: var(--muted); }
-}
+a { @apply underline decoration-border underline-offset-2; }
+nav a { @apply no-underline; }
