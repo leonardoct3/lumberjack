@@ -112,10 +112,25 @@ label {
 }
 .stack { display: flex; flex-direction: column; gap: var(--pad); }
 ol.stack {
-  list-style-position: inside;
+  counter-reset: rank;
+  list-style: none;
   margin: 0;
-  padding: 0;
+  padding-left: 0;
 }
+ol.stack > li {
+  counter-increment: rank;
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+ol.stack > li::before {
+  content: counter(rank) ".";
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 1.5rem;
+  padding-top: 0.2rem;
+}
+ol.stack > li > * { flex: 1; }
 .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .two-col { display: grid; gap: var(--pad); }
 .heat-score { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 700; }
