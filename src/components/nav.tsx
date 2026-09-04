@@ -16,6 +16,8 @@ export function Nav() {
       <Link href="/heat">Calor</Link>
       {" | "}
       <Link href="/inbox">Inbox</Link>
+      {" | "}
+      <Link href="/setup">Setup</Link>
     </nav>
   );
 }
