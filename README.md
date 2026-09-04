@@ -58,7 +58,7 @@ npm run connector  # unofficial WhatsApp listener (QR on first run)
 
 ## UI
 
-Dark theme (noite / lima), single `720px` breakpoint (tables + top nav above; cards + bottom nav below). Plain CSS — no Tailwind.
+Professional dark board built with Tailwind CSS and shadcn/ui. Layout switches at a **768px** breakpoint (tables and top nav on desktop; cards and bottom nav on mobile). Feedback uses Sonner toasts. Requires Node **24** (`nvm use` reads `.nvmrc`).
 
 ## Out of v1
 
