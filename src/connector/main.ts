@@ -8,6 +8,7 @@ import makeWASocket, {
   type WASocket,
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
+import { tryConnectDatabase } from "@/connector/database";
 import { writeWaStatus } from "@/connector/status";
 import { prisma } from "@/db/client";
 import { isListenDay } from "@/domain/timezone";
@@ -163,14 +164,11 @@ async function main(): Promise<void> {
   if (!existsSync(join(authDir, "creds.json"))) {
     persistStatus("qr");
   }
-  try {
-    await prisma.$connect();
-  } catch (err) {
-    console.error("database unavailable", err);
-    persistStatus(
-      "disconnected",
-      err instanceof Error ? err.message : "database-unavailable",
-    );
+  const db = await tryConnectDatabase(() => prisma.$connect());
+  if (!db.ok) {
+    console.error("database unavailable", db.detail);
+    persistStatus("disconnected", db.detail);
+    return;
   }
   await connectSocket();
 }
