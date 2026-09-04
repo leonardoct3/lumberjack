@@ -74,6 +74,22 @@ describe("ingestRawMessage", () => {
     expect(message.text).toBe("bom dia galera");
   });
 
+  it("duplicate ingest still upserts sender role from senderIsGroupAdmin", async () => {
+    const first = await ingestRawMessage(prisma, baseInput());
+    const second = await ingestRawMessage(
+      prisma,
+      baseInput({ senderIsGroupAdmin: true }),
+    );
+
+    expect(second.created).toBe(false);
+    expect(second.messageId).toBe(first.messageId);
+
+    const sender = await prisma.sender.findUniqueOrThrow({
+      where: { waId: "s-1" },
+    });
+    expect(sender.role).toBe("admin");
+  });
+
   it("admin promo creates a pending party candidate", async () => {
     const r = await ingestRawMessage(
       prisma,

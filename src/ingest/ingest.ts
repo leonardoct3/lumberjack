@@ -18,13 +18,6 @@ export async function ingestRawMessage(
   db: PrismaClient,
   input: RawMessageInput,
 ): Promise<{ created: boolean; messageId: string }> {
-  const existing = await db.message.findUnique({
-    where: { waMessageId: input.waMessageId },
-  });
-  if (existing) {
-    return { created: false, messageId: existing.id };
-  }
-
   const group = await db.group.upsert({
     where: { waId: input.groupWaId },
     create: {
@@ -54,6 +47,13 @@ export async function ingestRawMessage(
       role: nextRole,
     },
   });
+
+  const existing = await db.message.findUnique({
+    where: { waMessageId: input.waMessageId },
+  });
+  if (existing) {
+    return { created: false, messageId: existing.id };
+  }
 
   const message = await db.message.create({
     data: {
