@@ -51,7 +51,7 @@ npm run connector  # unofficial WhatsApp listener (QR on first run)
 | `npm run dev` | Next.js |
 | `npm run worker` | One batch pass |
 | `npm run connector` | Baileys connector |
-| `npm test` | Vitest |
+| `npm test` | Vitest (serial file execution — tests share one Postgres) |
 
 ## Out of v1
 
