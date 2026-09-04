@@ -33,7 +33,7 @@ export function SetupBoard(props: {
   const { connected, banner, groups, senders } = props;
   const router = useRouter();
   const [, start] = useTransition();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
   const refresh = () => router.refresh();
 
   function submit(
@@ -42,10 +42,14 @@ export function SetupBoard(props: {
     fd: FormData,
     success: string,
   ) {
-    setPendingId(id);
+    setPendingIds((prev) => new Set(prev).add(id));
     start(() => {
       void runAction(action, fd, success, refresh).finally(() =>
-        setPendingId(null),
+        setPendingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
       );
     });
   }
@@ -87,7 +91,7 @@ export function SetupBoard(props: {
                 </TableHeader>
                 <TableBody>
                   {groups.map((group) => {
-                    const busy = pendingId === `group-${group.id}`;
+                    const busy = pendingIds.has(`group-${group.id}`);
                     return (
                       <TableRow key={group.id}>
                         <TableCell>{group.name}</TableCell>
@@ -130,7 +134,7 @@ export function SetupBoard(props: {
 
             <ul className="space-y-3 md:hidden">
               {groups.map((group) => {
-                const busy = pendingId === `group-${group.id}`;
+                const busy = pendingIds.has(`group-${group.id}`);
                 return (
                   <li key={group.id}>
                     <Card className="gap-3 p-4">
@@ -189,7 +193,7 @@ export function SetupBoard(props: {
                 </TableHeader>
                 <TableBody>
                   {senders.map((sender) => {
-                    const busy = pendingId === `sender-${sender.id}`;
+                    const busy = pendingIds.has(`sender-${sender.id}`);
                     return (
                       <TableRow key={sender.id}>
                         <TableCell>{sender.name}</TableCell>
@@ -238,7 +242,7 @@ export function SetupBoard(props: {
 
             <ul className="space-y-3 md:hidden">
               {senders.map((sender) => {
-                const busy = pendingId === `sender-${sender.id}`;
+                const busy = pendingIds.has(`sender-${sender.id}`);
                 return (
                   <li key={sender.id}>
                     <Card className="gap-3 p-4">

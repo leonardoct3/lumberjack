@@ -86,7 +86,7 @@ export function PartyBoard(props: {
   const { party, noBuy, upcoming, watchlistEligible, lots, timeline } = props;
   const router = useRouter();
   const [, start] = useTransition();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
   const refresh = () => router.refresh();
 
   function submit(
@@ -95,17 +95,21 @@ export function PartyBoard(props: {
     fd: FormData,
     success: string,
   ) {
-    setPendingId(id);
+    setPendingIds((prev) => new Set(prev).add(id));
     start(() => {
       void runAction(action, fd, success, refresh).finally(() =>
-        setPendingId(null),
+        setPendingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
       );
     });
   }
 
-  const enqueueBusy = pendingId === "enqueue";
-  const addLotBusy = pendingId === "add-lot";
-  const editBusy = pendingId === "edit";
+  const enqueueBusy = pendingIds.has("enqueue");
+  const addLotBusy = pendingIds.has("add-lot");
+  const editBusy = pendingIds.has("edit");
 
   return (
     <div className="space-y-6">
@@ -170,7 +174,7 @@ export function PartyBoard(props: {
                 </TableHeader>
                 <TableBody>
                   {lots.map((lot) => {
-                    const busy = pendingId === `lot-${lot.id}`;
+                    const busy = pendingIds.has(`lot-${lot.id}`);
                     return (
                       <TableRow key={lot.id}>
                         <TableCell>{lot.label || "—"}</TableCell>
@@ -221,7 +225,7 @@ export function PartyBoard(props: {
 
             <ul className="space-y-3 md:hidden">
               {lots.map((lot) => {
-                const busy = pendingId === `lot-${lot.id}`;
+                const busy = pendingIds.has(`lot-${lot.id}`);
                 return (
                   <li key={lot.id}>
                     <Card className="gap-2 p-4">
@@ -459,7 +463,7 @@ export function PartyBoard(props: {
                   <p className="text-sm">Origem do candidato</p>
                 ) : null}
                 {item.signals.map((signal) => {
-                  const busy = pendingId === `signal-${signal.id}`;
+                  const busy = pendingIds.has(`signal-${signal.id}`);
                   return (
                     <div key={signal.id} className="space-y-1">
                       <p className="text-sm">Sinal {signal.kind}</p>

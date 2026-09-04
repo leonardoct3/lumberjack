@@ -38,7 +38,7 @@ function heatCell(heat: number | null) {
 export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
   const router = useRouter();
   const [, start] = useTransition();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
   const refresh = () => router.refresh();
 
   function submit(
@@ -47,16 +47,20 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
     fd: FormData,
     success: string,
   ) {
-    setPendingId(id);
+    setPendingIds((prev) => new Set(prev).add(id));
     start(() => {
       void runAction(action, fd, success, refresh).finally(() =>
-        setPendingId(null),
+        setPendingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
       );
     });
   }
 
   function actions(item: WatchlistItem) {
-    const busy = pendingId === item.id;
+    const busy = pendingIds.has(item.id);
     return (
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="ghost" size="sm">

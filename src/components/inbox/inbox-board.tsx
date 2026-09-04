@@ -43,7 +43,7 @@ export function InboxBoard(props: {
   const { candidates, orphans, upcoming } = props;
   const router = useRouter();
   const [, start] = useTransition();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
   const refresh = () => router.refresh();
 
   function submit(
@@ -52,10 +52,14 @@ export function InboxBoard(props: {
     fd: FormData,
     success: string,
   ) {
-    setPendingId(id);
+    setPendingIds((prev) => new Set(prev).add(id));
     start(() => {
       void runAction(action, fd, success, refresh).finally(() =>
-        setPendingId(null),
+        setPendingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
       );
     });
   }
@@ -68,7 +72,7 @@ export function InboxBoard(props: {
           <p>Nenhum candidato</p>
         ) : (
           candidates.map((candidate) => {
-            const busy = pendingId === candidate.id;
+            const busy = pendingIds.has(candidate.id);
             return (
               <Card key={candidate.id} className="gap-4 p-4">
                 <p className="text-muted-foreground text-sm">
@@ -203,7 +207,7 @@ export function InboxBoard(props: {
           <p>Nenhum órfão</p>
         ) : (
           orphans.map((orphan) => {
-            const busy = pendingId === orphan.id;
+            const busy = pendingIds.has(orphan.id);
             return (
               <Card key={orphan.id} className="gap-4 p-4">
                 <p className="text-sm">
