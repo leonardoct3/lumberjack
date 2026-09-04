@@ -1,5 +1,5 @@
+import { Shell } from "@/components/ui/shell";
 import "./globals.css";
-import { Nav } from "@/components/nav";
 
 export default function RootLayout({
   children,
@@ -9,8 +9,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body>
-        <Nav />
-        {children}
+        <Shell>{children}</Shell>
       </body>
     </html>
   );
