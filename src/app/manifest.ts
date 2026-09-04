@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Inteligência operacional para compra de ingressos.",
     start_url: "/",
     display: "standalone",
-    background_color: "#0e0913",
-    theme_color: "#5f1e82",
+    background_color: "#0b0a0d",
+    theme_color: "#0b0a0d",
     icons: [
       {
         src: "/lumberjack-fury-icon.png",

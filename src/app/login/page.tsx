@@ -34,8 +34,8 @@ export default function LoginPage() {
   return (
     <main className="grid min-h-screen place-items-center p-4 md:p-8">
       <Card className="grid min-h-[560px] w-full max-w-[940px] gap-0 overflow-hidden border-border/90 p-0 shadow-[0_40px_120px_rgba(0,0,0,0.45)] md:grid-cols-[1.05fr_.95fr]">
-        <section className="relative hidden overflow-hidden border-r border-border bg-[#140a1b] p-10 md:flex md:flex-col">
-          <div className="absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(193,107,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(193,107,255,0.07)_1px,transparent_1px)] [background-size:32px_32px]" />
+        <section className="relative hidden overflow-hidden border-r border-border bg-[#111015] p-10 md:flex md:flex-col">
+          <div className="absolute inset-0 opacity-35 [background-image:linear-gradient(rgba(193,107,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(193,107,255,0.05)_1px,transparent_1px)] [background-size:32px_32px]" />
           <div className="relative z-10">
             <BrandMark />
           </div>

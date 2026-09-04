@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { Trees } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function BrandMark({
@@ -10,15 +10,9 @@ export function BrandMark({
 }) {
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      <span className="relative grid size-9 shrink-0 place-items-center rounded-[11px] bg-primary/10 shadow-[0_0_0_1px_rgba(193,107,255,0.28),0_8px_30px_rgba(193,107,255,0.16)]">
-        <Image
-          src="/lumberjack-fury-icon.png"
-          alt=""
-          width={36}
-          height={36}
-          sizes="36px"
-          className="size-full object-contain p-px"
-        />
+      <span className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-[11px] bg-primary text-primary-foreground shadow-[0_0_0_1px_rgba(193,107,255,0.28),0_8px_30px_rgba(193,107,255,0.12)]">
+        <Trees className="size-[18px] stroke-[2.25]" aria-hidden="true" />
+        <span className="absolute right-1 bottom-1 size-1 rounded-full bg-primary-foreground/45" />
       </span>
       {!compact ? (
         <span className="min-w-0">
