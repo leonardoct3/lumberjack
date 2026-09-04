@@ -6,6 +6,7 @@ import { rejectCandidate } from "@/catalog/reject";
 import { unlinkSignal } from "@/catalog/unlink";
 import { markPastParties } from "@/catalog/mark-past";
 import { linkOrphan } from "@/catalog/link-orphan";
+import { closeLot, homeDestination, moveWatchlist } from "@/catalog/watchlist";
 
 const now = new Date("2026-09-03T15:00:00Z");
 
@@ -133,5 +134,95 @@ describe("catalog", () => {
     const p = await prisma.party.findFirstOrThrow();
     expect(p.status).toBe("past");
     expect(p.watchlistPosition).toBeNull();
+  });
+
+  it("moveWatchlist swaps adjacent positions", async () => {
+    const first = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        watchlistPosition: 1,
+        lots: { create: { label: "1º lote", openedAt: now } },
+      },
+    });
+    const second = await prisma.party.create({
+      data: {
+        name: "BABEL",
+        aliases: ["babel"],
+        eventAt: new Date("2026-09-19T03:00:00Z"),
+        watchlistPosition: 2,
+        lots: { create: { label: "1º lote", openedAt: now } },
+      },
+    });
+
+    await moveWatchlist(prisma, first.id, "down");
+
+    expect((await prisma.party.findUniqueOrThrow({ where: { id: first.id } })).watchlistPosition).toBe(2);
+    expect((await prisma.party.findUniqueOrThrow({ where: { id: second.id } })).watchlistPosition).toBe(1);
+
+    await moveWatchlist(prisma, first.id, "up");
+
+    expect((await prisma.party.findUniqueOrThrow({ where: { id: first.id } })).watchlistPosition).toBe(1);
+    expect((await prisma.party.findUniqueOrThrow({ where: { id: second.id } })).watchlistPosition).toBe(2);
+  });
+
+  it("closeLot sets closedAt and clears watchlist when no open lots remain", async () => {
+    const party = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        watchlistPosition: 1,
+      },
+    });
+    const lot = await prisma.lot.create({
+      data: { partyId: party.id, label: "1º lote", openedAt: now },
+    });
+
+    await closeLot(prisma, lot.id, now);
+
+    const closed = await prisma.lot.findUniqueOrThrow({ where: { id: lot.id } });
+    expect(closed.closedAt).toEqual(now);
+    expect((await prisma.party.findUniqueOrThrow({ where: { id: party.id } })).watchlistPosition).toBeNull();
+  });
+
+  it("homeDestination is inbox when pending candidates exist", async () => {
+    await seedCandidate();
+    expect(await homeDestination(prisma)).toBe("/inbox");
+  });
+
+  it("homeDestination is inbox when orphans exist", async () => {
+    const { sender } = await seedCandidate();
+    await prisma.partyCandidate.updateMany({ data: { status: "rejected" } });
+    const group = await prisma.group.findFirstOrThrow();
+    await prisma.message.create({
+      data: {
+        waMessageId: "w-orphan-home",
+        groupId: group.id,
+        senderId: sender.id,
+        sentAt: now,
+        text: "procuro onix",
+        class: "pista_procura",
+      },
+    });
+    expect(await homeDestination(prisma)).toBe("/inbox");
+  });
+
+  it("homeDestination is watchlist when the queue is non-empty", async () => {
+    await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        watchlistPosition: 1,
+        lots: { create: { label: "1º lote", openedAt: now } },
+      },
+    });
+    expect(await homeDestination(prisma)).toBe("/watchlist");
+  });
+
+  it("homeDestination is heat when inbox and watchlist are empty", async () => {
+    expect(await homeDestination(prisma)).toBe("/heat");
   });
 });
