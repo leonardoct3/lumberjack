@@ -62,42 +62,8 @@ export default async function PartyDetailPage({
   });
   if (!party) notFound();
 
-  const [candidateSources, sameNameParties] = await Promise.all([
-    prisma.partyCandidate.findMany({
-      where: {
-        status: "confirmed",
-        name: party.name,
-        source: { partyId: null },
-      },
-      include: {
-        source: { include: { sender: true, group: true, signals: true, candidate: true } },
-      },
-    }),
-    prisma.party.findMany({
-      where: { name: party.name },
-      select: { id: true, createdAt: true },
-    }),
-  ]);
-  const ownedCandidateSources = candidateSources.filter((candidate) => {
-    const nearest = sameNameParties.reduce((best, other) => {
-      const delta = Math.abs(other.createdAt.getTime() - candidate.createdAt.getTime());
-      const bestDelta = Math.abs(best.createdAt.getTime() - candidate.createdAt.getTime());
-      return delta < bestDelta ? other : best;
-    });
-    return nearest.id === party.id;
-  });
-
   const seen = new Set(party.messages.map((m) => m.id));
-  const timeline = [
-    ...party.messages,
-    ...ownedCandidateSources
-      .map((c) => c.source)
-      .filter((m) => {
-        if (seen.has(m.id)) return false;
-        seen.add(m.id);
-        return true;
-      }),
-  ].sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
+  const timeline = party.messages;
 
   const upcoming = party.status === "upcoming";
   const hasOpenLot = party.lots.some((lot) => lot.closedAt == null);

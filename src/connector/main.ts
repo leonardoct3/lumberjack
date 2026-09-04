@@ -22,7 +22,14 @@ try {
 
 const authDir = resolve(process.env.WA_AUTH_DIR ?? "./data/wa-auth");
 const statusPath = resolve(process.env.WA_STATUS_PATH ?? "./data/wa-status.json");
+const MAX_RECONNECT_ATTEMPTS = 8;
+const RECONNECT_BASE_DELAY_MS = 1_000;
 let skippedListenDay = false;
+let reconnectAttempts = 0;
+const groupMetaCache = new Map<
+  string,
+  Awaited<ReturnType<WASocket["groupMetadata"]>>
+>();
 
 function persistStatus(
   state: "connected" | "qr" | "disconnected",
@@ -72,7 +79,7 @@ async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
     const jid = msg.key.remoteJid;
     if (!jid || !isJidGroup(jid)) return;
 
-    const meta = await sock.groupMetadata(jid).catch(() => null);
+    const meta = await cachedGroupMetadata(sock, jid);
     const groupName = meta?.subject ?? jid;
     const group = await upsertGroup(jid, groupName);
     if (!group?.listen) return;
@@ -121,6 +128,7 @@ async function connectSocket(): Promise<void> {
       persistStatus("qr");
     }
     if (connection === "open") {
+      reconnectAttempts = 0;
       persistStatus("connected");
       void syncGroups(sock);
     }
@@ -133,7 +141,7 @@ async function connectSocket(): Promise<void> {
         String(code ?? lastDisconnect?.error ?? "closed"),
       );
       if (code !== DisconnectReason.loggedOut) {
-        void connectSocket();
+        scheduleReconnect();
       }
     }
   });
@@ -147,6 +155,26 @@ async function connectSocket(): Promise<void> {
   });
 }
 
+async function cachedGroupMetadata(sock: WASocket, jid: string) {
+  const cached = groupMetaCache.get(jid);
+  if (cached) return cached;
+  const meta = await sock.groupMetadata(jid).catch(() => null);
+  if (meta) groupMetaCache.set(jid, meta);
+  return meta;
+}
+
+function scheduleReconnect(): void {
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    persistStatus("disconnected", "reconnect-exhausted");
+    return;
+  }
+  const delayMs = RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempts;
+  reconnectAttempts += 1;
+  setTimeout(() => {
+    void connectSocket();
+  }, delayMs);
+}
+
 async function syncGroups(sock: WASocket): Promise<void> {
   let groups: Awaited<ReturnType<WASocket["groupFetchAllParticipating"]>>;
   try {
@@ -156,6 +184,7 @@ async function syncGroups(sock: WASocket): Promise<void> {
     return;
   }
   for (const [id, meta] of Object.entries(groups)) {
+    groupMetaCache.set(id, meta);
     await upsertGroup(id, meta.subject ?? id);
   }
 }

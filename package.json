@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "vitest run --fileParallelism false",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && vitest run --fileParallelism false",
     "test:watch": "vitest",
     "worker": "tsx src/jobs/main.ts",
     "connector": "tsx src/connector/main.ts",

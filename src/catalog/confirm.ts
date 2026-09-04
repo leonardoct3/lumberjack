@@ -26,6 +26,18 @@ export async function confirmCandidate(
     input.lotLabel != null || input.url != null || input.officialPrice != null;
 
   return db.$transaction(async (tx) => {
+    const claimed = await tx.partyCandidate.updateMany({
+      where: { id: input.candidateId, status: "pending" },
+      data: { status: "confirmed" },
+    });
+    if (claimed.count === 0) {
+      throw new Error("confirmCandidate requires a pending candidate");
+    }
+
+    const candidate = await tx.partyCandidate.findUniqueOrThrow({
+      where: { id: input.candidateId },
+    });
+
     let watchlistPosition: number | null = null;
     if (shouldCreateLot && status === "upcoming") {
       const agg = await tx.party.aggregate({
@@ -60,9 +72,9 @@ export async function confirmCandidate(
       lotId = lot.id;
     }
 
-    await tx.partyCandidate.update({
-      where: { id: input.candidateId },
-      data: { status: "confirmed" },
+    await tx.message.update({
+      where: { id: candidate.sourceMessageId },
+      data: { partyId: party.id },
     });
 
     return { partyId: party.id, lotId };

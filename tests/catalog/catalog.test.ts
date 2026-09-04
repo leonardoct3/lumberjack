@@ -60,6 +60,24 @@ describe("catalog", () => {
     expect(r.lotId).not.toBeNull();
     const c = await prisma.partyCandidate.findUniqueOrThrow({ where: { id: candidate.id } });
     expect(c.status).toBe("confirmed");
+    const source = await prisma.message.findUniqueOrThrow({
+      where: { id: candidate.sourceMessageId },
+    });
+    expect(source.partyId).toBe(r.partyId);
+  });
+
+  it("confirmCandidate is idempotent on double-submit", async () => {
+    const { candidate } = await seedCandidate();
+    const input = {
+      candidateId: candidate.id,
+      name: "ONIX",
+      eventAt: new Date("2026-09-12T03:00:00Z"),
+      lotLabel: "1º lote",
+    };
+    await confirmCandidate(prisma, input);
+    await expect(confirmCandidate(prisma, input)).rejects.toThrow();
+    expect(await prisma.party.count()).toBe(1);
+    expect(await prisma.lot.count()).toBe(1);
   });
 
   it("reject does not create a party", async () => {
@@ -119,6 +137,76 @@ describe("catalog", () => {
     const signal = await prisma.signal.findUniqueOrThrow({ where: { messageId: msg.id } });
     expect(signal).toMatchObject({ type: "demand", partyId: party.id, senderId: sender.id });
     expect((await prisma.message.findUniqueOrThrow({ where: { id: msg.id } })).partyId).toBe(party.id);
+  });
+
+  it("linkOrphan rejects a past party or a non-pista class", async () => {
+    const { sender } = await seedCandidate();
+    const group = await prisma.group.findFirstOrThrow();
+    const past = await prisma.party.create({
+      data: {
+        name: "VELHA",
+        aliases: [],
+        eventAt: new Date("2026-09-02T03:00:00Z"),
+        status: "past",
+      },
+    });
+    const upcoming = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        status: "upcoming",
+      },
+    });
+    const procura = await prisma.message.create({
+      data: {
+        waMessageId: "w-orphan-past",
+        groupId: group.id,
+        senderId: sender.id,
+        sentAt: now,
+        text: "procuro velha",
+        class: "pista_procura",
+      },
+    });
+    const ruido = await prisma.message.create({
+      data: {
+        waMessageId: "w-orphan-ruido",
+        groupId: group.id,
+        senderId: sender.id,
+        sentAt: now,
+        text: "kkkkk",
+        class: "ruido",
+      },
+    });
+    const promo = await prisma.message.create({
+      data: {
+        waMessageId: "w-orphan-promo",
+        groupId: group.id,
+        senderId: sender.id,
+        sentAt: now,
+        text: "ONIX 1 lote",
+        class: "admin_promo",
+      },
+    });
+    const unclassified = await prisma.message.create({
+      data: {
+        waMessageId: "w-orphan-null",
+        groupId: group.id,
+        senderId: sender.id,
+        sentAt: now,
+        text: "???",
+        class: null,
+      },
+    });
+
+    await expect(linkOrphan(prisma, { messageId: procura.id, partyId: past.id })).rejects.toThrow();
+    await expect(linkOrphan(prisma, { messageId: ruido.id, partyId: upcoming.id })).rejects.toThrow();
+    await expect(linkOrphan(prisma, { messageId: promo.id, partyId: upcoming.id })).rejects.toThrow();
+    await expect(
+      linkOrphan(prisma, { messageId: unclassified.id, partyId: upcoming.id }),
+    ).rejects.toThrow();
+    expect(await prisma.signal.count()).toBe(0);
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: procura.id } })).partyId).toBeNull();
   });
 
   it("marks past parties in SP and clears watchlist", async () => {
