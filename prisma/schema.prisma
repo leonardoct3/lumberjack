@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SenderRole {
+  admin
+  pista
+  unknown
+}
+
+enum MessageClass {
+  admin_promo
+  pista_oferta
+  pista_procura
+  ruido
+}
+
+enum CandidateStatus {
+  pending
+  confirmed
+  rejected
+}
+
+enum PartyStatus {
+  upcoming
+  past
+  cancelled
+}
+
+enum Platform {
+  sympla
+  gandaya
+  blacktag
+  ingresse
+  other
+  unknown
+}
+
+enum SignalType {
+  offer
+  demand
+}
+
+model Group {
+  id        String    @id @default(cuid())
+  waId      String    @unique
+  name      String
+  listen    Boolean   @default(false)
+  messages  Message[]
+  createdAt DateTime  @default(now())
+}
+
+model Sender {
+  id        String     @id @default(cuid())
+  waId      String     @unique
+  name      String?
+  role      SenderRole @default(unknown)
+  messages  Message[]
+  signals   Signal[]
+  createdAt DateTime   @default(now())
+}
+
+model Message {
+  id           String         @id @default(cuid())
+  waMessageId  String         @unique
+  group        Group          @relation(fields: [groupId], references: [id])
+  groupId      String
+  sender       Sender         @relation(fields: [senderId], references: [id])
+  senderId     String
+  sentAt       DateTime
+  text         String
+  class        MessageClass?
+  party        Party?   @relation(fields: [partyId], references: [id])
+  partyId      String?
+  candidate    PartyCandidate?
+  signals      Signal[]
+  createdAt    DateTime @default(now())
+}
+
+model PartyCandidate {
+  id              String          @id @default(cuid())
+  status          CandidateStatus @default(pending)
+  name            String?
+  url             String?
+  lotLabel        String?
+  officialPrice   Float?
+  eventAt         DateTime?
+  platform        Platform        @default(unknown)
+  source          Message         @relation(fields: [sourceMessageId], references: [id])
+  sourceMessageId String          @unique
+  createdAt       DateTime        @default(now())
+}
+
+model Party {
+  id                 String         @id @default(cuid())
+  name               String
+  aliases            String[]
+  eventAt            DateTime
+  status             PartyStatus    @default(upcoming)
+  qualitativeScore   Int?
+  watchlistPosition  Int?
+  notes              String?
+  lots               Lot[]
+  messages           Message[]
+  signals            Signal[]
+  heatSnapshots      HeatSnapshot[]
+  createdAt          DateTime       @default(now())
+}
+
+model Lot {
+  id            String    @id @default(cuid())
+  party         Party     @relation(fields: [partyId], references: [id])
+  partyId       String
+  label         String
+  openedAt      DateTime
+  closedAt      DateTime?
+  officialPrice Float?
+  url           String?
+  platform      Platform  @default(unknown)
+}
+
+model Signal {
+  id        String     @id @default(cuid())
+  type      SignalType
+  party     Party      @relation(fields: [partyId], references: [id])
+  partyId   String
+  message   Message    @relation(fields: [messageId], references: [id])
+  messageId String     @unique
+  sender    Sender     @relation(fields: [senderId], references: [id])
+  senderId  String
+  createdAt DateTime   @default(now())
+}
+
+model HeatSnapshot {
+  id                      String   @id @default(cuid())
+  party                   Party    @relation(fields: [partyId], references: [id])
+  partyId                 String
+  computedAt              DateTime
+  demand1d                Int
+  demand3d                Int
+  demand7d                Int
+  offer1d                 Int
+  offer3d                 Int
+  offer7d                 Int
+  uniqueDemandSenders7d   Int
+  daysToEvent             Int
+  score                   Int
+}
