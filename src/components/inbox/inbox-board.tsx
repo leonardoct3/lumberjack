@@ -2,7 +2,7 @@
 
 import type { JSX } from "react";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   actionConfirmCandidate,
   actionLinkOrphan,
@@ -42,15 +42,22 @@ export function InboxBoard(props: {
 }): JSX.Element {
   const { candidates, orphans, upcoming } = props;
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const refresh = () => router.refresh();
 
   function submit(
+    id: string,
     action: (fd: FormData) => Promise<void>,
     fd: FormData,
     success: string,
   ) {
-    start(() => runAction(action, fd, success, refresh));
+    setPendingId(id);
+    start(() => {
+      void runAction(action, fd, success, refresh).finally(() =>
+        setPendingId(null),
+      );
+    });
   }
 
   return (
@@ -60,109 +67,133 @@ export function InboxBoard(props: {
         {candidates.length === 0 ? (
           <p>Nenhum candidato</p>
         ) : (
-          candidates.map((candidate) => (
-            <Card key={candidate.id} className="gap-4 p-4">
-              <p className="text-muted-foreground text-sm">
-                {candidate.sourceText}
-              </p>
-              <form
-                className="space-y-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  submit(
-                    actionConfirmCandidate,
-                    new FormData(e.currentTarget),
-                    TOAST.confirmed,
-                  );
-                }}
-              >
-                <input type="hidden" name="candidateId" value={candidate.id} />
-                <div className="space-y-1.5">
-                  <Label htmlFor={`name-${candidate.id}`}>Nome</Label>
-                  <Input
-                    id={`name-${candidate.id}`}
-                    name="name"
-                    defaultValue={candidate.name}
-                    required
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={`eventAt-${candidate.id}`}>Data</Label>
-                  <Input
-                    id={`eventAt-${candidate.id}`}
-                    type="datetime-local"
-                    name="eventAt"
-                    defaultValue={candidate.eventAtLocal}
-                    required
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={`lot-${candidate.id}`}>Lote</Label>
-                  <Input
-                    id={`lot-${candidate.id}`}
-                    name="lot"
-                    defaultValue={candidate.lot}
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={`url-${candidate.id}`}>URL</Label>
-                  <Input
-                    id={`url-${candidate.id}`}
-                    name="url"
-                    defaultValue={candidate.url}
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={`price-${candidate.id}`}>Preço</Label>
-                  <Input
-                    id={`price-${candidate.id}`}
-                    name="price"
-                    type="number"
-                    step="0.01"
-                    defaultValue={candidate.price}
-                    disabled={pending}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={`nota-${candidate.id}`}>Nota</Label>
-                  <Input
-                    id={`nota-${candidate.id}`}
-                    name="nota"
-                    type="number"
-                    min={1}
-                    max={5}
-                    disabled={pending}
-                  />
-                </div>
-                <Button type="submit" disabled={pending}>
-                  Confirmar
-                </Button>
-              </form>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  submit(
-                    actionRejectCandidate,
-                    new FormData(e.currentTarget),
-                    TOAST.rejected,
-                  );
-                }}
-              >
-                <input type="hidden" name="candidateId" value={candidate.id} />
-                <Button
-                  type="submit"
-                  variant="destructive"
-                  disabled={pending}
+          candidates.map((candidate) => {
+            const busy = pendingId === candidate.id;
+            return (
+              <Card key={candidate.id} className="gap-4 p-4">
+                <p className="text-muted-foreground text-sm">
+                  {candidate.sourceText}
+                </p>
+                <form
+                  className="space-y-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submit(
+                      candidate.id,
+                      actionConfirmCandidate,
+                      new FormData(e.currentTarget),
+                      TOAST.confirmed,
+                    );
+                  }}
                 >
-                  Rejeitar
-                </Button>
-              </form>
-            </Card>
-          ))
+                  <input
+                    type="hidden"
+                    name="candidateId"
+                    value={candidate.id}
+                  />
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`name-${candidate.id}`}>Nome</Label>
+                    <Input
+                      id={`name-${candidate.id}`}
+                      name="name"
+                      defaultValue={candidate.name}
+                      required
+                      disabled={busy}
+                      aria-busy={busy || undefined}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`eventAt-${candidate.id}`}>Data</Label>
+                    <Input
+                      id={`eventAt-${candidate.id}`}
+                      type="datetime-local"
+                      name="eventAt"
+                      defaultValue={candidate.eventAtLocal}
+                      required
+                      disabled={busy}
+                      aria-busy={busy || undefined}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`lot-${candidate.id}`}>Lote</Label>
+                    <Input
+                      id={`lot-${candidate.id}`}
+                      name="lot"
+                      defaultValue={candidate.lot}
+                      disabled={busy}
+                      aria-busy={busy || undefined}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`url-${candidate.id}`}>URL</Label>
+                    <Input
+                      id={`url-${candidate.id}`}
+                      name="url"
+                      defaultValue={candidate.url}
+                      disabled={busy}
+                      aria-busy={busy || undefined}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`price-${candidate.id}`}>Preço</Label>
+                    <Input
+                      id={`price-${candidate.id}`}
+                      name="price"
+                      type="number"
+                      step="0.01"
+                      defaultValue={candidate.price}
+                      disabled={busy}
+                      aria-busy={busy || undefined}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`nota-${candidate.id}`}>Nota</Label>
+                    <Input
+                      id={`nota-${candidate.id}`}
+                      name="nota"
+                      type="number"
+                      min={1}
+                      max={5}
+                      disabled={busy}
+                      aria-busy={busy || undefined}
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={busy}
+                    aria-busy={busy || undefined}
+                  >
+                    Confirmar
+                  </Button>
+                </form>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submit(
+                      candidate.id,
+                      actionRejectCandidate,
+                      new FormData(e.currentTarget),
+                      TOAST.rejected,
+                    );
+                  }}
+                >
+                  <input
+                    type="hidden"
+                    name="candidateId"
+                    value={candidate.id}
+                  />
+                  <Button
+                    type="submit"
+                    variant="destructive"
+                    disabled={busy}
+                    aria-busy={busy || undefined}
+                  >
+                    Rejeitar
+                  </Button>
+                </form>
+              </Card>
+            );
+          })
         )}
       </section>
 
@@ -171,49 +202,58 @@ export function InboxBoard(props: {
         {orphans.length === 0 ? (
           <p>Nenhum órfão</p>
         ) : (
-          orphans.map((orphan) => (
-            <Card key={orphan.id} className="gap-4 p-4">
-              <p className="text-sm">
-                {orphan.sender}: {orphan.text}
-              </p>
-              <form
-                className="space-y-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  submit(
-                    actionLinkOrphan,
-                    new FormData(e.currentTarget),
-                    TOAST.linked,
-                  );
-                }}
-              >
-                <input type="hidden" name="messageId" value={orphan.id} />
-                <div className="space-y-1.5">
-                  <Label htmlFor={`party-${orphan.id}`}>Festa</Label>
-                  <select
-                    id={`party-${orphan.id}`}
-                    name="partyId"
-                    defaultValue={orphan.defaultPartyId}
-                    required
-                    disabled={pending}
-                    className={selectClassName}
-                  >
-                    <option value="" disabled>
-                      Selecionar festa
-                    </option>
-                    {upcoming.map((party) => (
-                      <option key={party.id} value={party.id}>
-                        {party.name}
+          orphans.map((orphan) => {
+            const busy = pendingId === orphan.id;
+            return (
+              <Card key={orphan.id} className="gap-4 p-4">
+                <p className="text-sm">
+                  {orphan.sender}: {orphan.text}
+                </p>
+                <form
+                  className="space-y-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submit(
+                      orphan.id,
+                      actionLinkOrphan,
+                      new FormData(e.currentTarget),
+                      TOAST.linked,
+                    );
+                  }}
+                >
+                  <input type="hidden" name="messageId" value={orphan.id} />
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`party-${orphan.id}`}>Festa</Label>
+                    <select
+                      id={`party-${orphan.id}`}
+                      name="partyId"
+                      defaultValue={orphan.defaultPartyId}
+                      required
+                      disabled={busy}
+                      aria-busy={busy || undefined}
+                      className={selectClassName}
+                    >
+                      <option value="" disabled>
+                        Selecionar festa
                       </option>
-                    ))}
-                  </select>
-                </div>
-                <Button type="submit" disabled={pending}>
-                  Vincular
-                </Button>
-              </form>
-            </Card>
-          ))
+                      {upcoming.map((party) => (
+                        <option key={party.id} value={party.id}>
+                          {party.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={busy}
+                    aria-busy={busy || undefined}
+                  >
+                    Vincular
+                  </Button>
+                </form>
+              </Card>
+            );
+          })
         )}
       </section>
     </div>

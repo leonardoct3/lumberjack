@@ -119,9 +119,9 @@ export function HeatBoard(props: {
       </form>
 
       {rows.length === 0 ? (
-        <Card className="p-6">
+        <Card className="gap-2 p-6">
           <p>Nenhuma festa no calor</p>
-          <p className="text-muted-foreground mt-2 text-sm">
+          <p className="text-muted-foreground text-sm">
             <Link href="/inbox">Inbox</Link>
           </p>
         </Card>

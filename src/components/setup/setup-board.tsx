@@ -2,7 +2,7 @@
 
 import type { JSX } from "react";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   actionSetGroupListen,
   actionSetSenderRole,
@@ -32,15 +32,22 @@ export function SetupBoard(props: {
 }): JSX.Element {
   const { connected, banner, groups, senders } = props;
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const refresh = () => router.refresh();
 
   function submit(
+    id: string,
     action: (fd: FormData) => Promise<void>,
     fd: FormData,
     success: string,
   ) {
-    start(() => runAction(action, fd, success, refresh));
+    setPendingId(id);
+    start(() => {
+      void runAction(action, fd, success, refresh).finally(() =>
+        setPendingId(null),
+      );
+    });
   }
 
   const stripClass =
@@ -69,37 +76,85 @@ export function SetupBoard(props: {
           <p>Nenhum grupo</p>
         ) : (
           <>
-            <Table className="hidden md:table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groups.map((group) => (
-                  <TableRow key={group.id}>
-                    <TableCell>{group.name}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className="text-muted-foreground"
-                      >
-                        {group.listen ? "Ouvindo" : "Pausado"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groups.map((group) => {
+                    const busy = pendingId === `group-${group.id}`;
+                    return (
+                      <TableRow key={group.id}>
+                        <TableCell>{group.name}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className="text-muted-foreground"
+                          >
+                            {group.listen ? "Ouvindo" : "Pausado"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            aria-busy={busy || undefined}
+                            onClick={() => {
+                              const fd = new FormData();
+                              fd.set("id", group.id);
+                              fd.set("listen", group.listen ? "0" : "1");
+                              submit(
+                                `group-${group.id}`,
+                                actionSetGroupListen,
+                                fd,
+                                group.listen ? TOAST.paused : TOAST.listening,
+                              );
+                            }}
+                          >
+                            {group.listen ? "Pausar" : "Ouvir"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            <ul className="space-y-3 md:hidden">
+              {groups.map((group) => {
+                const busy = pendingId === `group-${group.id}`;
+                return (
+                  <li key={group.id}>
+                    <Card className="gap-3 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{group.name}</span>
+                        <Badge
+                          variant="outline"
+                          className="text-muted-foreground"
+                        >
+                          {group.listen ? "Ouvindo" : "Pausado"}
+                        </Badge>
+                      </div>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={pending}
+                        disabled={busy}
+                        aria-busy={busy || undefined}
                         onClick={() => {
                           const fd = new FormData();
                           fd.set("id", group.id);
                           fd.set("listen", group.listen ? "0" : "1");
                           submit(
+                            `group-${group.id}`,
                             actionSetGroupListen,
                             fd,
                             group.listen ? TOAST.paused : TOAST.listening,
@@ -108,46 +163,10 @@ export function SetupBoard(props: {
                       >
                         {group.listen ? "Pausar" : "Ouvir"}
                       </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-
-            <ul className="space-y-3 md:hidden">
-              {groups.map((group) => (
-                <li key={group.id}>
-                  <Card className="gap-3 p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{group.name}</span>
-                      <Badge
-                        variant="outline"
-                        className="text-muted-foreground"
-                      >
-                        {group.listen ? "Ouvindo" : "Pausado"}
-                      </Badge>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => {
-                        const fd = new FormData();
-                        fd.set("id", group.id);
-                        fd.set("listen", group.listen ? "0" : "1");
-                        submit(
-                          actionSetGroupListen,
-                          fd,
-                          group.listen ? TOAST.paused : TOAST.listening,
-                        );
-                      }}
-                    >
-                      {group.listen ? "Pausar" : "Ouvir"}
-                    </Button>
-                  </Card>
-                </li>
-              ))}
+                    </Card>
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
@@ -159,24 +178,77 @@ export function SetupBoard(props: {
           <p>Nenhum remetente</p>
         ) : (
           <>
-            <Table className="hidden md:table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Papel</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {senders.map((sender) => (
-                  <TableRow key={sender.id}>
-                    <TableCell>{sender.name}</TableCell>
-                    <TableCell colSpan={2}>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Papel</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {senders.map((sender) => {
+                    const busy = pendingId === `sender-${sender.id}`;
+                    return (
+                      <TableRow key={sender.id}>
+                        <TableCell>{sender.name}</TableCell>
+                        <TableCell colSpan={2}>
+                          <form
+                            className="flex flex-wrap items-center gap-2"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              submit(
+                                `sender-${sender.id}`,
+                                actionSetSenderRole,
+                                new FormData(e.currentTarget),
+                                TOAST.saved,
+                              );
+                            }}
+                          >
+                            <input type="hidden" name="id" value={sender.id} />
+                            <select
+                              name="role"
+                              defaultValue={sender.role}
+                              className={selectClassName}
+                              disabled={busy}
+                              aria-busy={busy || undefined}
+                            >
+                              <option value="admin">admin</option>
+                              <option value="pista">pista</option>
+                              <option value="unknown">unknown</option>
+                            </select>
+                            <Button
+                              type="submit"
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              aria-busy={busy || undefined}
+                            >
+                              Salvar
+                            </Button>
+                          </form>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            <ul className="space-y-3 md:hidden">
+              {senders.map((sender) => {
+                const busy = pendingId === `sender-${sender.id}`;
+                return (
+                  <li key={sender.id}>
+                    <Card className="gap-3 p-4">
+                      <p className="font-medium">{sender.name}</p>
                       <form
                         className="flex flex-wrap items-center gap-2"
                         onSubmit={(e) => {
                           e.preventDefault();
                           submit(
+                            `sender-${sender.id}`,
                             actionSetSenderRole,
                             new FormData(e.currentTarget),
                             TOAST.saved,
@@ -188,7 +260,8 @@ export function SetupBoard(props: {
                           name="role"
                           defaultValue={sender.role}
                           className={selectClassName}
-                          disabled={pending}
+                          disabled={busy}
+                          aria-busy={busy || undefined}
                         >
                           <option value="admin">admin</option>
                           <option value="pista">pista</option>
@@ -198,56 +271,16 @@ export function SetupBoard(props: {
                           type="submit"
                           variant="ghost"
                           size="sm"
-                          disabled={pending}
+                          disabled={busy}
+                          aria-busy={busy || undefined}
                         >
                           Salvar
                         </Button>
                       </form>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-
-            <ul className="space-y-3 md:hidden">
-              {senders.map((sender) => (
-                <li key={sender.id}>
-                  <Card className="gap-3 p-4">
-                    <p className="font-medium">{sender.name}</p>
-                    <form
-                      className="flex flex-wrap items-center gap-2"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        submit(
-                          actionSetSenderRole,
-                          new FormData(e.currentTarget),
-                          TOAST.saved,
-                        );
-                      }}
-                    >
-                      <input type="hidden" name="id" value={sender.id} />
-                      <select
-                        name="role"
-                        defaultValue={sender.role}
-                        className={selectClassName}
-                        disabled={pending}
-                      >
-                        <option value="admin">admin</option>
-                        <option value="pista">pista</option>
-                        <option value="unknown">unknown</option>
-                      </select>
-                      <Button
-                        type="submit"
-                        variant="ghost"
-                        size="sm"
-                        disabled={pending}
-                      >
-                        Salvar
-                      </Button>
-                    </form>
-                  </Card>
-                </li>
-              ))}
+                    </Card>
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}

@@ -2,7 +2,7 @@
 
 import type { JSX } from "react";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   actionAddLot,
   actionCloseLot,
@@ -10,7 +10,7 @@ import {
   actionUnlinkSignal,
   actionUpdateParty,
 } from "@/app/actions/party";
-import { Alert } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -85,16 +85,27 @@ export function PartyBoard(props: {
 }): JSX.Element {
   const { party, noBuy, upcoming, watchlistEligible, lots, timeline } = props;
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const refresh = () => router.refresh();
 
   function submit(
+    id: string,
     action: (fd: FormData) => Promise<void>,
     fd: FormData,
     success: string,
   ) {
-    start(() => runAction(action, fd, success, refresh));
+    setPendingId(id);
+    start(() => {
+      void runAction(action, fd, success, refresh).finally(() =>
+        setPendingId(null),
+      );
+    });
   }
+
+  const enqueueBusy = pendingId === "enqueue";
+  const addLotBusy = pendingId === "add-lot";
+  const editBusy = pendingId === "edit";
 
   return (
     <div className="space-y-6">
@@ -105,8 +116,8 @@ export function PartyBoard(props: {
         </p>
         <p className="text-sm">Status {STATUS_LABEL[party.status]}</p>
         {noBuy ? (
-          <Alert className="border-destructive text-destructive">
-            sem compra
+          <Alert variant="destructive">
+            <AlertTitle>sem compra</AlertTitle>
           </Alert>
         ) : null}
         {watchlistEligible && !noBuy && upcoming ? (
@@ -115,6 +126,7 @@ export function PartyBoard(props: {
               onSubmit={(e) => {
                 e.preventDefault();
                 submit(
+                  "enqueue",
                   actionEnqueueWatchlist,
                   new FormData(e.currentTarget),
                   TOAST.enrolled,
@@ -122,7 +134,11 @@ export function PartyBoard(props: {
               }}
             >
               <input type="hidden" name="partyId" value={party.id} />
-              <Button type="submit" disabled={pending}>
+              <Button
+                type="submit"
+                disabled={enqueueBusy}
+                aria-busy={enqueueBusy || undefined}
+              >
                 Entrar na fila
               </Button>
             </form>
@@ -140,101 +156,121 @@ export function PartyBoard(props: {
           <p>Nenhum lote</p>
         ) : (
           <>
-            <Table className="hidden md:table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Lote</TableHead>
-                  <TableHead>Link</TableHead>
-                  <TableHead>Preço</TableHead>
-                  <TableHead>Plataforma</TableHead>
-                  <TableHead>Aberto em</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {lots.map((lot) => (
-                  <TableRow key={lot.id}>
-                    <TableCell>{lot.label || "—"}</TableCell>
-                    <TableCell>
-                      {lot.url ? (
-                        <a href={lot.url} rel="noreferrer">
-                          {lot.url}
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>{lot.price || "—"}</TableCell>
-                    <TableCell>{lot.platform}</TableCell>
-                    <TableCell>{formatWhen(lot.openedAt)}</TableCell>
-                    <TableCell>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lote</TableHead>
+                    <TableHead>Link</TableHead>
+                    <TableHead>Preço</TableHead>
+                    <TableHead>Plataforma</TableHead>
+                    <TableHead>Aberto em</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lots.map((lot) => {
+                    const busy = pendingId === `lot-${lot.id}`;
+                    return (
+                      <TableRow key={lot.id}>
+                        <TableCell>{lot.label || "—"}</TableCell>
+                        <TableCell>
+                          {lot.url ? (
+                            <a href={lot.url} rel="noreferrer">
+                              {lot.url}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell>{lot.price || "—"}</TableCell>
+                        <TableCell>{lot.platform}</TableCell>
+                        <TableCell>{formatWhen(lot.openedAt)}</TableCell>
+                        <TableCell>
+                          {lot.closedAt == null ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              aria-busy={busy || undefined}
+                              onClick={() => {
+                                const fd = new FormData();
+                                fd.set("lotId", lot.id);
+                                fd.set("partyId", party.id);
+                                submit(
+                                  `lot-${lot.id}`,
+                                  actionCloseLot,
+                                  fd,
+                                  TOAST.lotClosed,
+                                );
+                              }}
+                            >
+                              Fechar lote
+                            </Button>
+                          ) : (
+                            `Fechado ${formatWhen(lot.closedAt)}`
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            <ul className="space-y-3 md:hidden">
+              {lots.map((lot) => {
+                const busy = pendingId === `lot-${lot.id}`;
+                return (
+                  <li key={lot.id}>
+                    <Card className="gap-2 p-4">
+                      <p className="font-medium">{lot.label || "—"}</p>
+                      <p className="text-muted-foreground text-sm">
+                        {lot.url ? (
+                          <a href={lot.url} rel="noreferrer">
+                            {lot.url}
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </p>
+                      <p className="text-sm">
+                        Preço {lot.price || "—"} · {lot.platform}
+                      </p>
+                      <p className="text-muted-foreground text-sm">
+                        Aberto em {formatWhen(lot.openedAt)}
+                      </p>
                       {lot.closedAt == null ? (
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          disabled={pending}
+                          disabled={busy}
+                          aria-busy={busy || undefined}
                           onClick={() => {
                             const fd = new FormData();
                             fd.set("lotId", lot.id);
                             fd.set("partyId", party.id);
-                            submit(actionCloseLot, fd, TOAST.lotClosed);
+                            submit(
+                              `lot-${lot.id}`,
+                              actionCloseLot,
+                              fd,
+                              TOAST.lotClosed,
+                            );
                           }}
                         >
                           Fechar lote
                         </Button>
                       ) : (
-                        `Fechado ${formatWhen(lot.closedAt)}`
+                        <p className="text-sm">
+                          Fechado {formatWhen(lot.closedAt)}
+                        </p>
                       )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-
-            <ul className="space-y-3 md:hidden">
-              {lots.map((lot) => (
-                <li key={lot.id}>
-                  <Card className="gap-2 p-4">
-                    <p className="font-medium">{lot.label || "—"}</p>
-                    <p className="text-muted-foreground text-sm">
-                      {lot.url ? (
-                        <a href={lot.url} rel="noreferrer">
-                          {lot.url}
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </p>
-                    <p className="text-sm">
-                      Preço {lot.price || "—"} · {lot.platform}
-                    </p>
-                    <p className="text-muted-foreground text-sm">
-                      Aberto em {formatWhen(lot.openedAt)}
-                    </p>
-                    {lot.closedAt == null ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => {
-                          const fd = new FormData();
-                          fd.set("lotId", lot.id);
-                          fd.set("partyId", party.id);
-                          submit(actionCloseLot, fd, TOAST.lotClosed);
-                        }}
-                      >
-                        Fechar lote
-                      </Button>
-                    ) : (
-                      <p className="text-sm">
-                        Fechado {formatWhen(lot.closedAt)}
-                      </p>
-                    )}
-                  </Card>
-                </li>
-              ))}
+                    </Card>
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
@@ -245,6 +281,7 @@ export function PartyBoard(props: {
             onSubmit={(e) => {
               e.preventDefault();
               submit(
+                "add-lot",
                 actionAddLot,
                 new FormData(e.currentTarget),
                 TOAST.lotOpened,
@@ -258,12 +295,18 @@ export function PartyBoard(props: {
                 id="lot-label"
                 name="label"
                 required
-                disabled={pending}
+                disabled={addLotBusy}
+                aria-busy={addLotBusy || undefined}
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="lot-url">URL</Label>
-              <Input id="lot-url" name="url" disabled={pending} />
+              <Input
+                id="lot-url"
+                name="url"
+                disabled={addLotBusy}
+                aria-busy={addLotBusy || undefined}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="lot-price">Preço</Label>
@@ -272,7 +315,8 @@ export function PartyBoard(props: {
                 name="price"
                 type="number"
                 step="0.01"
-                disabled={pending}
+                disabled={addLotBusy}
+                aria-busy={addLotBusy || undefined}
               />
             </div>
             <div className="space-y-1.5">
@@ -281,7 +325,8 @@ export function PartyBoard(props: {
                 id="lot-platform"
                 name="platform"
                 defaultValue="unknown"
-                disabled={pending}
+                disabled={addLotBusy}
+                aria-busy={addLotBusy || undefined}
                 className={selectClassName}
               >
                 {PLATFORMS.map((p) => (
@@ -291,7 +336,11 @@ export function PartyBoard(props: {
                 ))}
               </select>
             </div>
-            <Button type="submit" disabled={pending}>
+            <Button
+              type="submit"
+              disabled={addLotBusy}
+              aria-busy={addLotBusy || undefined}
+            >
               Abrir lote
             </Button>
           </form>
@@ -305,6 +354,7 @@ export function PartyBoard(props: {
           onSubmit={(e) => {
             e.preventDefault();
             submit(
+              "edit",
               actionUpdateParty,
               new FormData(e.currentTarget),
               TOAST.saved,
@@ -319,7 +369,8 @@ export function PartyBoard(props: {
               name="name"
               defaultValue={party.name}
               required
-              disabled={pending}
+              disabled={editBusy}
+              aria-busy={editBusy || undefined}
             />
           </div>
           <div className="space-y-1.5">
@@ -330,7 +381,8 @@ export function PartyBoard(props: {
               name="eventAt"
               defaultValue={toDatetimeLocal(party.eventAt)}
               required
-              disabled={pending}
+              disabled={editBusy}
+              aria-busy={editBusy || undefined}
             />
           </div>
           <div className="space-y-1.5">
@@ -339,7 +391,8 @@ export function PartyBoard(props: {
               id="party-status"
               name="status"
               defaultValue={party.status}
-              disabled={pending}
+              disabled={editBusy}
+              aria-busy={editBusy || undefined}
               className={selectClassName}
             >
               <option value="upcoming">Futura</option>
@@ -353,7 +406,8 @@ export function PartyBoard(props: {
               id="party-aliases"
               name="aliases"
               defaultValue={party.aliases}
-              disabled={pending}
+              disabled={editBusy}
+              aria-busy={editBusy || undefined}
             />
           </div>
           <div className="space-y-1.5">
@@ -365,7 +419,8 @@ export function PartyBoard(props: {
               min={1}
               max={5}
               defaultValue={party.nota}
-              disabled={pending}
+              disabled={editBusy}
+              aria-busy={editBusy || undefined}
             />
           </div>
           <div className="space-y-1.5">
@@ -374,10 +429,15 @@ export function PartyBoard(props: {
               id="party-notes"
               name="notes"
               defaultValue={party.notes}
-              disabled={pending}
+              disabled={editBusy}
+              aria-busy={editBusy || undefined}
             />
           </div>
-          <Button type="submit" disabled={pending}>
+          <Button
+            type="submit"
+            disabled={editBusy}
+            aria-busy={editBusy || undefined}
+          >
             Salvar
           </Button>
         </form>
@@ -398,25 +458,34 @@ export function PartyBoard(props: {
                 {item.isCandidateSource ? (
                   <p className="text-sm">Origem do candidato</p>
                 ) : null}
-                {item.signals.map((signal) => (
-                  <div key={signal.id} className="space-y-1">
-                    <p className="text-sm">Sinal {signal.kind}</p>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => {
-                        const fd = new FormData();
-                        fd.set("signalId", signal.id);
-                        fd.set("partyId", party.id);
-                        submit(actionUnlinkSignal, fd, TOAST.unlinked);
-                      }}
-                    >
-                      Desvincular
-                    </Button>
-                  </div>
-                ))}
+                {item.signals.map((signal) => {
+                  const busy = pendingId === `signal-${signal.id}`;
+                  return (
+                    <div key={signal.id} className="space-y-1">
+                      <p className="text-sm">Sinal {signal.kind}</p>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={busy}
+                        aria-busy={busy || undefined}
+                        onClick={() => {
+                          const fd = new FormData();
+                          fd.set("signalId", signal.id);
+                          fd.set("partyId", party.id);
+                          submit(
+                            `signal-${signal.id}`,
+                            actionUnlinkSignal,
+                            fd,
+                            TOAST.unlinked,
+                          );
+                        }}
+                      >
+                        Desvincular
+                      </Button>
+                    </div>
+                  );
+                })}
               </li>
             ))}
           </ul>

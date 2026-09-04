@@ -19,18 +19,22 @@ export function AppNav() {
       <span className="text-foreground hidden font-semibold md:block">
         Lumberjack
       </span>
-      {NAV_LINKS.map((l) => (
-        <Link
-          key={l.href}
-          href={l.href}
-          className={cn(
-            "text-muted-foreground hover:text-foreground text-sm no-underline",
-            isNavActive(pathname, l.href) && "text-primary font-medium",
-          )}
-        >
-          {l.label}
-        </Link>
-      ))}
+      {NAV_LINKS.map((l) => {
+        const active = isNavActive(pathname, l.href);
+        return (
+          <Link
+            key={l.href}
+            href={l.href}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "text-muted-foreground hover:text-foreground text-sm no-underline",
+              active && "text-primary font-medium",
+            )}
+          >
+            {l.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

@@ -18,19 +18,21 @@ export default async function SetupPage() {
       : { tone: banner.tone, text: banner.text };
 
   return (
-    <SetupBoard
-      connected={banner === null}
-      banner={boardBanner}
-      groups={groups.map((group) => ({
-        id: group.id,
-        name: group.name,
-        listen: group.listen,
-      }))}
-      senders={senders.map((sender) => ({
-        id: sender.id,
-        name: sender.name ?? sender.waId,
-        role: sender.role,
-      }))}
-    />
+    <main className="space-y-6">
+      <SetupBoard
+        connected={banner === null}
+        banner={boardBanner}
+        groups={groups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          listen: group.listen,
+        }))}
+        senders={senders.map((sender) => ({
+          id: sender.id,
+          name: sender.name ?? sender.waId,
+          role: sender.role,
+        }))}
+      />
+    </main>
   );
 }
