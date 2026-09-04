@@ -5,6 +5,7 @@ import { confirmCandidate } from "@/catalog/confirm";
 import { rejectCandidate } from "@/catalog/reject";
 import { unlinkSignal } from "@/catalog/unlink";
 import { markPastParties } from "@/catalog/mark-past";
+import { linkOrphan } from "@/catalog/link-orphan";
 
 const now = new Date("2026-09-03T15:00:00Z");
 
@@ -91,6 +92,31 @@ describe("catalog", () => {
     expect(await prisma.message.findUniqueOrThrow({ where: { id: msg.id } })).toMatchObject({
       partyId: null,
     });
+  });
+
+  it("linkOrphan turns an orphan procura into a demand signal", async () => {
+    const { sender } = await seedCandidate();
+    const party = await prisma.party.create({
+      data: { name: "ONIX", aliases: ["onix"], eventAt: new Date("2026-09-12T03:00:00Z") },
+    });
+    const group = await prisma.group.findFirstOrThrow();
+    const msg = await prisma.message.create({
+      data: {
+        waMessageId: "w-orphan",
+        groupId: group.id,
+        senderId: sender.id,
+        sentAt: now,
+        text: "procuro onix",
+        class: "pista_procura",
+      },
+    });
+    expect(await prisma.signal.count()).toBe(0);
+
+    await linkOrphan(prisma, { messageId: msg.id, partyId: party.id });
+
+    const signal = await prisma.signal.findUniqueOrThrow({ where: { messageId: msg.id } });
+    expect(signal).toMatchObject({ type: "demand", partyId: party.id, senderId: sender.id });
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: msg.id } })).partyId).toBe(party.id);
   });
 
   it("marks past parties in SP and clears watchlist", async () => {
