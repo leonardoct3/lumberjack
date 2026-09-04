@@ -10,7 +10,8 @@
     "connector": "tsx src/connector/main.ts",
     "db:up": "docker compose up -d",
     "db:migrate": "prisma migrate dev",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
