@@ -25,7 +25,7 @@ function rotr(n: number, x: number): number {
   return (x >>> n) | (x << (32 - n));
 }
 
-/** Sync SHA-256 hex that works in Node tests and Edge middleware. */
+/** Sync SHA-256 hex that works in Node tests and the request proxy. */
 function sha256Hex(message: string): string {
   const K = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,

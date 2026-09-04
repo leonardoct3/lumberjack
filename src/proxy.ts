@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { COOKIE, authDisabled, isValidSession } from "@/auth/cookie";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (authDisabled()) {
     return NextResponse.next();
   }
