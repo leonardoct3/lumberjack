@@ -1,0 +1,221 @@
+"use client";
+
+import type { JSX } from "react";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import {
+  actionConfirmCandidate,
+  actionLinkOrphan,
+  actionRejectCandidate,
+} from "@/app/actions/catalog";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { runAction } from "@/lib/run-action";
+import { TOAST } from "@/lib/toast-copy";
+
+export type InboxCandidate = {
+  id: string;
+  sourceText: string;
+  name: string;
+  eventAtLocal: string;
+  lot: string;
+  url: string;
+  price: string;
+};
+
+export type InboxOrphan = {
+  id: string;
+  text: string;
+  sender: string;
+  defaultPartyId: string;
+};
+
+const selectClassName =
+  "border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs";
+
+export function InboxBoard(props: {
+  candidates: InboxCandidate[];
+  orphans: InboxOrphan[];
+  upcoming: { id: string; name: string }[];
+}): JSX.Element {
+  const { candidates, orphans, upcoming } = props;
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const refresh = () => router.refresh();
+
+  function submit(
+    action: (fd: FormData) => Promise<void>,
+    fd: FormData,
+    success: string,
+  ) {
+    start(() => runAction(action, fd, success, refresh));
+  }
+
+  return (
+    <div className="grid gap-8 md:grid-cols-2">
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Candidatos</h2>
+        {candidates.length === 0 ? (
+          <p>Nenhum candidato</p>
+        ) : (
+          candidates.map((candidate) => (
+            <Card key={candidate.id} className="gap-4 p-4">
+              <p className="text-muted-foreground text-sm">
+                {candidate.sourceText}
+              </p>
+              <form
+                className="space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submit(
+                    actionConfirmCandidate,
+                    new FormData(e.currentTarget),
+                    TOAST.confirmed,
+                  );
+                }}
+              >
+                <input type="hidden" name="candidateId" value={candidate.id} />
+                <div className="space-y-1.5">
+                  <Label htmlFor={`name-${candidate.id}`}>Nome</Label>
+                  <Input
+                    id={`name-${candidate.id}`}
+                    name="name"
+                    defaultValue={candidate.name}
+                    required
+                    disabled={pending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`eventAt-${candidate.id}`}>Data</Label>
+                  <Input
+                    id={`eventAt-${candidate.id}`}
+                    type="datetime-local"
+                    name="eventAt"
+                    defaultValue={candidate.eventAtLocal}
+                    required
+                    disabled={pending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`lot-${candidate.id}`}>Lote</Label>
+                  <Input
+                    id={`lot-${candidate.id}`}
+                    name="lot"
+                    defaultValue={candidate.lot}
+                    disabled={pending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`url-${candidate.id}`}>URL</Label>
+                  <Input
+                    id={`url-${candidate.id}`}
+                    name="url"
+                    defaultValue={candidate.url}
+                    disabled={pending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`price-${candidate.id}`}>Preço</Label>
+                  <Input
+                    id={`price-${candidate.id}`}
+                    name="price"
+                    type="number"
+                    step="0.01"
+                    defaultValue={candidate.price}
+                    disabled={pending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`nota-${candidate.id}`}>Nota</Label>
+                  <Input
+                    id={`nota-${candidate.id}`}
+                    name="nota"
+                    type="number"
+                    min={1}
+                    max={5}
+                    disabled={pending}
+                  />
+                </div>
+                <Button type="submit" disabled={pending}>
+                  Confirmar
+                </Button>
+              </form>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submit(
+                    actionRejectCandidate,
+                    new FormData(e.currentTarget),
+                    TOAST.rejected,
+                  );
+                }}
+              >
+                <input type="hidden" name="candidateId" value={candidate.id} />
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={pending}
+                >
+                  Rejeitar
+                </Button>
+              </form>
+            </Card>
+          ))
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Órfãos</h2>
+        {orphans.length === 0 ? (
+          <p>Nenhum órfão</p>
+        ) : (
+          orphans.map((orphan) => (
+            <Card key={orphan.id} className="gap-4 p-4">
+              <p className="text-sm">
+                {orphan.sender}: {orphan.text}
+              </p>
+              <form
+                className="space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submit(
+                    actionLinkOrphan,
+                    new FormData(e.currentTarget),
+                    TOAST.linked,
+                  );
+                }}
+              >
+                <input type="hidden" name="messageId" value={orphan.id} />
+                <div className="space-y-1.5">
+                  <Label htmlFor={`party-${orphan.id}`}>Festa</Label>
+                  <select
+                    id={`party-${orphan.id}`}
+                    name="partyId"
+                    defaultValue={orphan.defaultPartyId}
+                    required
+                    disabled={pending}
+                    className={selectClassName}
+                  >
+                    <option value="" disabled>
+                      Selecionar festa
+                    </option>
+                    {upcoming.map((party) => (
+                      <option key={party.id} value={party.id}>
+                        {party.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button type="submit" disabled={pending}>
+                  Vincular
+                </Button>
+              </form>
+            </Card>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
