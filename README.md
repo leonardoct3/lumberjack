@@ -18,7 +18,10 @@ Copy `.env.example` to `.env`. Default database URL:
 DATABASE_URL=postgresql://lumberjack:lumberjack@localhost:5432/lumberjack
 ```
 
+Node **24 LTS** (`nvm use` reads `.nvmrc`).
+
 ```bash
+nvm use
 npm install
 npm run db:up
 npm run db:migrate
