@@ -15,7 +15,15 @@ export function readWaStatus(path: string): WaStatus {
       detail: "missing-session",
     };
   }
-  return JSON.parse(readFileSync(path, "utf8")) as WaStatus;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as WaStatus;
+  } catch {
+    return {
+      state: "disconnected",
+      updatedAt: new Date(0).toISOString(),
+      detail: "invalid-session",
+    };
+  }
 }
 
 export function writeWaStatus(path: string, status: WaStatus): void {

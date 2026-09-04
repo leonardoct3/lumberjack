@@ -63,7 +63,7 @@ export default async function InboxPage() {
             candidates.map((candidate) => (
               <Card key={candidate.id}>
                 <p>{candidate.source.text}</p>
-                <form action={actionConfirmCandidate}>
+                <form action={actionConfirmCandidate} className="stack">
                   <input type="hidden" name="candidateId" value={candidate.id} />
                   <label>
                     Nome
@@ -140,7 +140,7 @@ export default async function InboxPage() {
                   <p>
                     {message.sender.name ?? message.sender.waId}: {message.text}
                   </p>
-                  <form action={actionLinkOrphan}>
+                  <form action={actionLinkOrphan} className="stack">
                     <input type="hidden" name="messageId" value={message.id} />
                     <label>
                       Festa

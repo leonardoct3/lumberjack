@@ -14,7 +14,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <ShellNav />
       {banner ? (
         <HideOnLogin>
-          <Banner tone={banner.tone}>{banner.text}</Banner>
+          <div className="shell-banner">
+            <Banner tone={banner.tone}>{banner.text}</Banner>
+          </div>
         </HideOnLogin>
       ) : null}
       {children}

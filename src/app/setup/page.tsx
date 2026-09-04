@@ -22,7 +22,12 @@ export default async function SetupPage() {
   const groupRows = groups.map((group) => ({
     id: group.id,
     cells: {
-      name: group.name,
+      name: (
+        <>
+          {group.name}{" "}
+          <Badge>{group.listen ? "Ouvindo" : "Pausado"}</Badge>
+        </>
+      ),
       listen: (
         <form action={actionSetGroupListen}>
           <input type="hidden" name="id" value={group.id} />
@@ -31,8 +36,8 @@ export default async function SetupPage() {
             name="listen"
             value={group.listen ? "0" : "1"}
           />
-          <Button type="submit">
-            {group.listen ? "Ouvindo" : "Pausado"}
+          <Button type="submit" variant="ghost">
+            {group.listen ? "Pausar" : "Ouvir"}
           </Button>
         </form>
       ),
