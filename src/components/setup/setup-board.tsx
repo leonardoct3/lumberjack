@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
+import type { SessionGuidance } from "@/components/ui/session-banner";
 import {
   Table,
   TableBody,
@@ -47,7 +48,7 @@ const ROLE_LABEL = {
 
 export function SetupBoard(props: {
   connected: boolean;
-  banner: { tone: "accent" | "danger"; text: string } | null;
+  banner: SessionGuidance | null;
   canLogout: boolean;
   groups: { id: string; name: string; listen: boolean }[];
   senders: { id: string; name: string; role: "admin" | "pista" | "unknown" }[];
@@ -78,8 +79,7 @@ export function SetupBoard(props: {
 
   const listening = groups.filter((group) => group.listen).length;
   const classified = senders.filter((sender) => sender.role !== "unknown").length;
-  const statusTone = banner?.tone === "danger" ? "danger" : "accent";
-  const StatusIcon = connected ? Wifi : banner?.tone === "danger" ? CircleAlert : QrCode;
+  const StatusIcon = banner?.tone === "danger" ? CircleAlert : QrCode;
 
   return (
     <div className="space-y-7">
@@ -88,20 +88,34 @@ export function SetupBoard(props: {
         title="Central de conexão"
         description="Controle o que o monitor escuta e como cada remetente participa da classificação."
         icon={Settings2}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
+        meta={
+          banner ? (
             <div
-              className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
-                connected
-                  ? "border-primary/20 bg-primary/8 text-primary"
-                  : statusTone === "danger"
-                    ? "border-destructive/25 bg-destructive/8 text-destructive"
-                    : "border-primary/20 bg-primary/8 text-primary"
+              role="status"
+              className={`flex items-start gap-3 rounded-xl border px-4 py-3.5 ${
+                banner.tone === "danger"
+                  ? "border-destructive/25 bg-destructive/8 text-destructive"
+                  : "border-primary/25 bg-primary/8 text-primary"
               }`}
             >
-              <StatusIcon className="size-4" aria-hidden="true" />
-              {connected ? "WhatsApp conectado" : banner?.text}
+              <StatusIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{banner.title}</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  {banner.step}
+                </p>
+              </div>
             </div>
+          ) : null
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {connected ? (
+              <div className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/8 px-3.5 py-2.5 text-xs font-semibold text-primary">
+                <Wifi className="size-4" aria-hidden="true" />
+                WhatsApp conectado
+              </div>
+            ) : null}
             {canLogout ? (
               <form action={actionLogout}>
                 <Button type="submit" variant="ghost" size="sm">

@@ -13,7 +13,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <AppNav />
       <ShellFrame>
-        <SessionStrip state={status.state} />
+        <SessionStrip state={status.state} detail={status.detail} />
         {children}
       </ShellFrame>
     </>

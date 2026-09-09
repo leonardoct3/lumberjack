@@ -10,22 +10,17 @@ export const metadata: Metadata = { title: "Central de conexão" };
 export default async function SetupPage() {
   const statusPath = process.env.WA_STATUS_PATH ?? "./data/wa-status.json";
   const status = readWaStatus(statusPath);
-  const banner = sessionBanner(status.state);
+  const banner = sessionBanner(status.state, status.detail);
   const [groups, senders] = await Promise.all([
     prisma.group.findMany({ orderBy: { name: "asc" } }),
     prisma.sender.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  const boardBanner =
-    banner == null || banner.tone === "muted"
-      ? null
-      : { tone: banner.tone, text: banner.text };
-
   return (
     <main className="space-y-6">
       <SetupBoard
         connected={banner === null}
-        banner={boardBanner}
+        banner={banner}
         canLogout={!authDisabled()}
         groups={groups.map((group) => ({
           id: group.id,
