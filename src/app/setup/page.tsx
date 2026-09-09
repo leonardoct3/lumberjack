@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { authDisabled } from "@/auth/cookie";
 import { SetupBoard } from "@/components/setup/setup-board";
 import { sessionBanner } from "@/components/ui/session-banner";
 import { readWaStatus } from "@/connector/status";
@@ -25,6 +26,7 @@ export default async function SetupPage() {
       <SetupBoard
         connected={banner === null}
         banner={boardBanner}
+        canLogout={!authDisabled()}
         groups={groups.map((group) => ({
           id: group.id,
           name: group.name,

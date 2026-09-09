@@ -9,6 +9,8 @@ Timezone is **America/Sao_Paulo**. Listener days are Tuesday–Saturday.
 - The WhatsApp connector uses **Baileys**, an unofficial client. It violates WhatsApp ToS and can get the number banned.
 - Week 1 is meant to run on a **personal number** only to prove the pipe. A number used for bank/email 2FA is a real risk even for seven days.
 - `AUTH_DISABLED=1` skips login (intended for localhost). Do not expose that mode on a public host.
+- The session cookie is `HttpOnly`, `SameSite=Lax`, `Secure` in production, and carries a signed 7-day expiry. "Sair" on `/setup` clears it.
+- There is no server-side session store: logout drops the cookie from that browser, but a token already copied elsewhere keeps working until its expiry. Rotate `AUTH_PASSWORD` to invalidate every outstanding session.
 
 ## Setup
 

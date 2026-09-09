@@ -1,24 +1,59 @@
 /** Session cookie. In v1 AUTH_PASSWORD is both the login password and the token secret. */
 export const COOKIE = "lumberjack_session";
 
+/** How long a login stays valid. The expiry is signed into the token, not just the cookie. */
+export const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+const SIGNATURE_LENGTH = 64;
+
 export function authDisabled(): boolean {
   return process.env.AUTH_DISABLED === "1";
 }
 
-export function makeSessionToken(password: string, secret: string): string {
-  if (!password || !secret) {
-    throw new Error("password and secret must be non-empty");
+/** Token is `expiry.signature`, so a stolen cookie stops working on its own. */
+export function makeSessionToken(secret: string, expiresAt: number): string {
+  if (!secret) {
+    throw new Error("secret must be non-empty");
   }
-  return sha256Hex(`${password}:${secret}`);
+  if (!Number.isInteger(expiresAt) || expiresAt <= 0) {
+    throw new Error("expiresAt must be a positive integer");
+  }
+  return `${expiresAt}.${sha256Hex(`${secret}:${expiresAt}`)}`;
 }
 
 export function isValidSession(
   token: string | undefined,
-  password: string,
   secret: string,
+  now: number,
 ): boolean {
-  if (!token || !password || !secret) return false;
-  return token === makeSessionToken(password, secret);
+  if (!token || !secret) return false;
+
+  const parts = token.split(".");
+  if (parts.length !== 2) return false;
+  const [rawExpiry, signature] = parts;
+  if (!/^\d+$/.test(rawExpiry) || signature.length !== SIGNATURE_LENGTH) {
+    return false;
+  }
+
+  const expiresAt = Number(rawExpiry);
+  if (!Number.isSafeInteger(expiresAt) || now >= expiresAt) return false;
+
+  return safeEqual(signature, sha256Hex(`${secret}:${expiresAt}`));
+}
+
+/** Compares the typed password against AUTH_PASSWORD without leaking length or prefix. */
+export function matchesSecret(candidate: string, secret: string): boolean {
+  if (!candidate || !secret) return false;
+  return safeEqual(sha256Hex(candidate), sha256Hex(secret));
+}
+
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 function rotr(n: number, x: number): number {

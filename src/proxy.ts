@@ -12,11 +12,15 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const password = process.env.AUTH_PASSWORD ?? "";
+  const secret = process.env.AUTH_PASSWORD ?? "";
   const token = request.cookies.get(COOKIE)?.value;
-  if (isValidSession(token, password, password)) {
+  if (isValidSession(token, secret, Date.now())) {
     return NextResponse.next();
   }
 
-  return NextResponse.redirect(new URL("/login", request.url));
+  const response = NextResponse.redirect(new URL("/login", request.url));
+  if (token) {
+    response.cookies.delete(COOKIE);
+  }
+  return response;
 }

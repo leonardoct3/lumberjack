@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Activity, ArrowRight, LockKeyhole, Radio, ShieldCheck } from "lucide-react";
-import { COOKIE, makeSessionToken } from "@/auth/cookie";
+import {
+  COOKIE,
+  SESSION_MAX_AGE_SECONDS,
+  makeSessionToken,
+  matchesSecret,
+} from "@/auth/cookie";
 import { BrandMark } from "@/components/shell/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,14 +22,16 @@ async function login(formData: FormData) {
   "use server";
   const password = String(formData.get("password") ?? "");
   const secret = process.env.AUTH_PASSWORD ?? "";
-  if (!password || !secret || password !== secret) {
+  if (!matchesSecret(password, secret)) {
     return;
   }
 
   const jar = await cookies();
-  jar.set(COOKIE, makeSessionToken(password, secret), {
+  jar.set(COOKIE, makeSessionToken(secret, Date.now() + SESSION_MAX_AGE_SECONDS * 1000), {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
   });
   redirect("/");

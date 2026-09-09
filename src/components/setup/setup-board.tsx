@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import {
   CircleAlert,
   Headphones,
+  LogOut,
   Pause,
   Play,
   QrCode,
@@ -17,6 +18,7 @@ import {
   UsersRound,
   Wifi,
 } from "lucide-react";
+import { actionLogout } from "@/app/actions/auth";
 import { actionSetGroupListen, actionSetSenderRole } from "@/app/actions/setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,10 +48,11 @@ const ROLE_LABEL = {
 export function SetupBoard(props: {
   connected: boolean;
   banner: { tone: "accent" | "danger"; text: string } | null;
+  canLogout: boolean;
   groups: { id: string; name: string; listen: boolean }[];
   senders: { id: string; name: string; role: "admin" | "pista" | "unknown" }[];
 }): JSX.Element {
-  const { connected, banner, groups, senders } = props;
+  const { connected, banner, canLogout, groups, senders } = props;
   const router = useRouter();
   const [, start] = useTransition();
   const [pendingIds, setPendingIds] = useState(() => new Set<string>());
@@ -86,17 +89,26 @@ export function SetupBoard(props: {
         description="Controle o que o monitor escuta e como cada remetente participa da classificação."
         icon={Settings2}
         actions={
-          <div
-            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
-              connected
-                ? "border-primary/20 bg-primary/8 text-primary"
-                : statusTone === "danger"
-                  ? "border-destructive/25 bg-destructive/8 text-destructive"
-                  : "border-primary/20 bg-primary/8 text-primary"
-            }`}
-          >
-            <StatusIcon className="size-4" aria-hidden="true" />
-            {connected ? "WhatsApp conectado" : banner?.text}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
+                connected
+                  ? "border-primary/20 bg-primary/8 text-primary"
+                  : statusTone === "danger"
+                    ? "border-destructive/25 bg-destructive/8 text-destructive"
+                    : "border-primary/20 bg-primary/8 text-primary"
+              }`}
+            >
+              <StatusIcon className="size-4" aria-hidden="true" />
+              {connected ? "WhatsApp conectado" : banner?.text}
+            </div>
+            {canLogout ? (
+              <form action={actionLogout}>
+                <Button type="submit" variant="ghost" size="sm">
+                  <LogOut /> Sair
+                </Button>
+              </form>
+            ) : null}
           </div>
         }
       />
