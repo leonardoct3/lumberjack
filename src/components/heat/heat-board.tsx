@@ -6,9 +6,9 @@ import {
   Clock3,
   Flame,
   Radio,
-  SlidersHorizontal,
   Users,
 } from "lucide-react";
+import { HeatFilter } from "@/components/heat/heat-filter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -37,7 +37,7 @@ export type HeatRow = {
   days: number | null;
 };
 
-export type HeatGroup = { id: string; name: string };
+export type HeatGroup = { id: string; name: string; paused?: boolean };
 
 const WINDOWS = [1, 3, 7] as const;
 
@@ -206,32 +206,7 @@ export function HeatBoard(props: {
             </div>
           </div>
 
-          <form method="GET" action="/heat" className="flex items-end gap-2">
-            {janela ? (
-              <input type="hidden" name="janela" value={String(janela)} />
-            ) : null}
-            <label className="min-w-0 flex-1 md:min-w-52">
-              <span className="mb-2.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-                Grupo monitorado
-              </span>
-              <select
-                name="grupo"
-                defaultValue={grupo}
-                className="h-10 w-full rounded-[10px] border border-input bg-background/55 px-3.5 text-sm outline-none transition-colors hover:border-muted-foreground/45 focus:border-ring focus:ring-3 focus:ring-ring/12"
-              >
-                <option value="">Todos os grupos</option>
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Button type="submit" variant="outline">
-              Filtrar
-            </Button>
-          </form>
+          <HeatFilter janela={janela} grupo={grupo} groups={groups} />
         </Card>
 
         {rows.length === 0 ? (

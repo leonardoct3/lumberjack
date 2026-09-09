@@ -11,8 +11,17 @@ export default async function SetupPage() {
   const statusPath = process.env.WA_STATUS_PATH ?? "./data/wa-status.json";
   const status = readWaStatus(statusPath);
   const banner = sessionBanner(status.state, status.detail);
-  const [groups, senders] = await Promise.all([
-    prisma.group.findMany({ orderBy: { name: "asc" } }),
+  const [listening, available, senders] = await Promise.all([
+    prisma.group.findMany({
+      where: { listen: true },
+      select: { id: true, name: true, waId: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.group.findMany({
+      where: { listen: false },
+      select: { id: true, name: true, waId: true },
+      orderBy: { name: "asc" },
+    }),
     prisma.sender.findMany({ orderBy: { name: "asc" } }),
   ]);
 
@@ -22,11 +31,8 @@ export default async function SetupPage() {
         connected={banner === null}
         banner={banner}
         canLogout={!authDisabled()}
-        groups={groups.map((group) => ({
-          id: group.id,
-          name: group.name,
-          listen: group.listen,
-        }))}
+        listening={listening}
+        available={available}
         senders={senders.map((sender) => ({
           id: sender.id,
           name: sender.name ?? sender.waId,

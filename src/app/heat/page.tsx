@@ -27,7 +27,11 @@ export default async function HeatPage({
   const grupo = params.grupo?.trim() || "";
 
   const [groups, parties] = await Promise.all([
-    prisma.group.findMany({ orderBy: { name: "asc" } }),
+    prisma.group.findMany({
+      where: grupo ? { OR: [{ listen: true }, { id: grupo }] } : { listen: true },
+      select: { id: true, name: true, listen: true },
+      orderBy: { name: "asc" },
+    }),
     prisma.party.findMany({
       where: {
         ...(grupo ? { messages: { some: { groupId: grupo } } } : {}),
@@ -76,7 +80,11 @@ export default async function HeatPage({
       <HeatBoard
         janela={janela}
         grupo={grupo}
-        groups={groups.map((g) => ({ id: g.id, name: g.name }))}
+        groups={groups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          paused: !g.listen,
+        }))}
         rows={rows}
         updatedAt={latestComputedAt?.toISOString() ?? null}
       />

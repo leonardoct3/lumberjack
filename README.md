@@ -28,9 +28,12 @@ npm install
 npm run db:up
 npm run db:migrate
 npm run db:seed
+npm run db:test:setup
 ```
 
-`db:up` starts Postgres 16 via Docker Compose (does not stop other containers). `db:seed` wipes catalog tables and reloads the smoke fixture through real ingest + confirm + `refreshHeat`.
+`db:up` starts Postgres 16 via Docker Compose (does not stop other containers). `db:seed` **wipes the catalog tables of the database in `DATABASE_URL`** and reloads the smoke fixture through real ingest + confirm + `refreshHeat`.
+
+`db:test:setup` creates and migrates `lumberjack_test`. The suite truncates every table, so it runs only against a database whose name ends in `_test` (`DATABASE_URL_TEST` overrides the default) and refuses to start otherwise.
 
 ## Run
 
@@ -52,15 +55,18 @@ npm run connector  # unofficial WhatsApp listener (QR on first run)
 |---|---|
 | `npm run db:up` | `docker compose up -d` |
 | `npm run db:migrate` | Prisma migrate |
-| `npm run db:seed` | Fixture: 1 listen group, 1 admin, 1 pista, ~20 classified messages |
+| `npm run db:seed` | Fixture: 1 listen group, 1 admin, 1 pista, ~20 classified messages (destructive) |
+| `npm run db:test:setup` | Create + migrate `lumberjack_test` |
 | `npm run dev` | Next.js |
 | `npm run worker` | One batch pass |
 | `npm run connector` | Baileys connector |
-| `npm test` | Vitest (serial file execution — tests share one Postgres) |
+| `npm test` | `tsc --noEmit` + Vitest (serial files, against `lumberjack_test`) |
 
 ## UI
 
 Professional dark board built with Tailwind CSS and shadcn/ui. Layout switches at a **768px** breakpoint (tables and top nav on desktop; cards and bottom nav on mobile). Feedback uses Sonner toasts. Requires Node **24** (`nvm use` reads `.nvmrc`).
+
+WhatsApp syncs every group the account belongs to (hundreds), so group lists never render the whole set: Setup lists only the groups being listened to and reaches the rest through accent-insensitive search, and the Heat filter offers only listened groups plus the one currently in the query string.
 
 ## Out of v1
 
