@@ -15,4 +15,5 @@ export async function resetDb(db: PrismaClient): Promise<void> {
   await db.party.deleteMany();
   await db.sender.deleteMany();
   await db.group.deleteMany();
+  await db.waSession.deleteMany();
 }

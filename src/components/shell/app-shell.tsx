@@ -1,19 +1,19 @@
 import { connection } from "next/server";
+import { sessionBanner } from "@/components/ui/session-banner";
 import { readWaStatus } from "@/connector/status";
+import { prisma } from "@/db/client";
 import { AppNav } from "./app-nav";
 import { SessionStrip } from "./session-strip";
 import { ShellFrame } from "./shell-frame";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   await connection();
-  const status = readWaStatus(
-    process.env.WA_STATUS_PATH ?? "./data/wa-status.json",
-  );
+  const status = await readWaStatus(prisma);
   return (
     <>
       <AppNav />
       <ShellFrame>
-        <SessionStrip state={status.state} detail={status.detail} />
+        <SessionStrip banner={sessionBanner(status, Date.now())} />
         {children}
       </ShellFrame>
     </>

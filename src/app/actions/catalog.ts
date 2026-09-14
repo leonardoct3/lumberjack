@@ -23,7 +23,7 @@ export async function actionConfirmCandidate(formData: FormData) {
     url,
     officialPrice: priceRaw != null ? Number(priceRaw) : undefined,
     qualitativeScore: notaRaw != null ? Number(notaRaw) : undefined,
-  });
+  }, new Date());
   revalidatePath("/inbox");
 }
 

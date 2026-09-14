@@ -8,17 +8,21 @@ Timezone is **America/Sao_Paulo**. Listener days are Tuesday–Saturday.
 
 - The WhatsApp connector uses **Baileys**, an unofficial client. It violates WhatsApp ToS and can get the number banned.
 - Week 1 is meant to run on a **personal number** only to prove the pipe. A number used for bank/email 2FA is a real risk even for seven days.
-- `AUTH_DISABLED=1` skips login (intended for localhost). Do not expose that mode on a public host.
+- `AUTH_DISABLED=1` skips login (intended for localhost). Production refuses to boot with that flag or with a weak/default `AUTH_PASSWORD`.
 - The session cookie is `HttpOnly`, `SameSite=Lax`, `Secure` in production, and carries a signed 7-day expiry. "Sair" on `/setup` clears it.
 - There is no server-side session store: logout drops the cookie from that browser, but a token already copied elsewhere keeps working until its expiry. Rotate `AUTH_PASSWORD` to invalidate every outstanding session.
+- **Never run the connector locally while the Railway connector is up.** Two Baileys clients on the same auth credentials cause `conflict: replaced` and break Signal decryption. Local development uses the Docker Postgres; production ingestion belongs only to the hosted connector.
 
 ## Setup
 
 Copy `.env.example` to `.env`. Default database URL:
 
 ```
-DATABASE_URL=postgresql://lumberjack:lumberjack@localhost:5432/lumberjack
+DATABASE_URL=postgresql://lumberjack:lumberjack@localhost:5433/lumberjack
 ```
+
+Host port **5433**, not the Postgres default, so this project never fights another
+local Postgres for 5432. Compose keeps the data in the named volume `pgdata`.
 
 Node **24 LTS** (`nvm use` reads `.nvmrc`).
 
@@ -47,7 +51,12 @@ npm run connector  # unofficial WhatsApp listener (QR on first run)
 
 - `/` routes to `/inbox` when candidates or orphan pista signals are pending, otherwise `/watchlist` if the queue has an open lot, else `/heat`.
 - After seed, home should be `/watchlist`. Heat shows a score for the upcoming party. The past edition of the same name is a badge only — it stays off heat and has no buy CTA.
-- WhatsApp session lives in `data/wa-auth/` (not Postgres). Swap number = swap that folder. Disconnect does not wipe messages or parties; the worker still runs on what is already in the database.
+- WhatsApp auth lives in `WA_AUTH_DIR` (`data/wa-auth/` locally, `/data/wa-auth` on Railway). Session state (`connected` / `qr` / heartbeat) lives in the Postgres `WaSession` row, so the web board and connector can run as separate services. Pairing QR is rendered on `/setup`.
+- Swap number = swap the auth folder. Disconnect does not wipe messages or parties; the worker still runs on what is already in the database.
+
+## Hosting (Railway)
+
+Production layout: managed Postgres + `web` (`next start`) + `connector` (1 replica, volume on `/data`) + `worker` (hourly cron). Set `TZ=America/Sao_Paulo` and a strong `AUTH_PASSWORD` on every service. After the first deploy, open `/setup`, scan the QR, then mark the groups to listen — `listen` flags start empty on a fresh database.
 
 ## Scripts
 
@@ -58,6 +67,8 @@ npm run connector  # unofficial WhatsApp listener (QR on first run)
 | `npm run db:seed` | Fixture: 1 listen group, 1 admin, 1 pista, ~20 classified messages (destructive) |
 | `npm run db:test:setup` | Create + migrate `lumberjack_test` |
 | `npm run dev` | Next.js |
+| `npm run build` | Production Next.js build |
+| `npm run start` | Serve the production build |
 | `npm run worker` | One batch pass |
 | `npm run connector` | Baileys connector |
 | `npm test` | `tsc --noEmit` + Vitest (serial files, against `lumberjack_test`) |

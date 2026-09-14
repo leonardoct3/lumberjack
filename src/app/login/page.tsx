@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Activity, ArrowRight, LockKeyhole, Radio, ShieldCheck } from "lucide-react";
 import {
@@ -8,6 +8,11 @@ import {
   makeSessionToken,
   matchesSecret,
 } from "@/auth/cookie";
+import {
+  checkLoginRateLimit,
+  clearLoginRateLimit,
+  clientIpFromHeaders,
+} from "@/auth/rate-limit";
 import { BrandMark } from "@/components/shell/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,11 +25,20 @@ export const metadata: Metadata = {
 
 async function login(formData: FormData) {
   "use server";
+  const hdrs = await headers();
+  const ip = clientIpFromHeaders(hdrs);
+  const limit = checkLoginRateLimit(ip, Date.now());
+  if (!limit.ok) {
+    redirect("/login?erro=limite");
+  }
+
   const password = String(formData.get("password") ?? "");
   const secret = process.env.AUTH_PASSWORD ?? "";
   if (!matchesSecret(password, secret)) {
-    return;
+    redirect("/login?erro=senha");
   }
+
+  clearLoginRateLimit(ip);
 
   const jar = await cookies();
   jar.set(COOKIE, makeSessionToken(secret, Date.now() + SESSION_MAX_AGE_SECONDS * 1000), {
@@ -37,7 +51,19 @@ async function login(formData: FormData) {
   redirect("/");
 }
 
-export default function LoginPage() {
+const ERROR_COPY: Record<string, string> = {
+  senha: "Senha incorreta. Tente de novo.",
+  limite: "Muitas tentativas. Espere alguns minutos e tente de novo.",
+};
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ erro?: string }>;
+}) {
+  const { erro } = await searchParams;
+  const errorMessage = erro ? ERROR_COPY[erro] : undefined;
+
   return (
     <main className="grid min-h-screen place-items-center p-4 md:p-8">
       <Card className="grid min-h-[560px] w-full max-w-[940px] gap-0 overflow-hidden border-border/90 p-0 shadow-[0_40px_120px_rgba(0,0,0,0.45)] md:grid-cols-[1.05fr_.95fr]">
@@ -77,7 +103,7 @@ export default function LoginPage() {
 
           <p className="relative z-10 flex items-center gap-2 text-[11px] text-muted-foreground">
             <ShieldCheck className="size-3.5 text-primary" />
-            Acesso protegido ao ambiente local
+            Acesso protegido por senha do operador
           </p>
         </section>
 
@@ -104,7 +130,14 @@ export default function LoginPage() {
                   autoFocus
                   placeholder="Digite sua senha"
                   className="h-11"
+                  aria-invalid={errorMessage ? true : undefined}
+                  aria-describedby={errorMessage ? "login-error" : undefined}
                 />
+                {errorMessage ? (
+                  <p id="login-error" role="alert" className="text-sm text-destructive">
+                    {errorMessage}
+                  </p>
+                ) : null}
               </div>
               <Button type="submit" size="lg" className="w-full">
                 Entrar no painel

@@ -24,14 +24,20 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
-import { formatWhen } from "@/lib/datetime";
+import { formatEventWhen } from "@/lib/datetime";
 import { runAction } from "@/lib/run-action";
 import { TOAST } from "@/lib/toast-copy";
+
+// Header and rows must share one template, or the `auto` action track sizes
+// differently in each and every column below drifts out of alignment.
+const ROW_GRID =
+  "grid grid-cols-[56px_minmax(200px,1.8fr)_minmax(150px,1fr)_minmax(130px,.8fr)_64px_240px] items-center px-4";
 
 export type WatchlistItem = {
   id: string;
   name: string;
   eventAt: string;
+  countdown: string;
   lotLabels: string;
   lotUrl: string | null;
   heat: number | null;
@@ -78,15 +84,27 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
     });
   }
 
-  function actions(item: WatchlistItem) {
+  /** `compact` collapses the secondary actions to icons so the table row stays readable. */
+  function actions(item: WatchlistItem, compact: boolean) {
     const busy = pendingIds.has(item.id);
+    const secondary = (label: string) =>
+      compact
+        ? { size: "icon-sm" as const, title: label, "aria-label": label }
+        : { size: "sm" as const };
+
     return (
-      <div className="flex flex-wrap items-center gap-1">
+      <div
+        className={
+          compact
+            ? "flex items-center gap-1"
+            : "flex flex-wrap items-center gap-1"
+        }
+      >
         {item.canMoveUp ? (
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            {...secondary("Subir")}
             disabled={busy}
             aria-busy={busy || undefined}
             onClick={() => {
@@ -97,14 +115,14 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
             }}
           >
             <ArrowUp />
-            Subir
+            {compact ? null : "Subir"}
           </Button>
         ) : null}
         {item.canMoveDown ? (
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            {...secondary("Descer")}
             disabled={busy}
             aria-busy={busy || undefined}
             onClick={() => {
@@ -115,31 +133,32 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
             }}
           >
             <ArrowDown />
-            Descer
+            {compact ? null : "Descer"}
           </Button>
         ) : null}
-        {item.openLotIds.map((lotId) => (
+        {/* With two or more open lots there is no telling which icon closes
+            which, so that decision belongs on the party page. */}
+        {item.openLotIds.length === 1 ? (
           <Button
-            key={lotId}
             type="button"
             variant="ghost"
-            size="sm"
+            {...secondary("Fechar lote")}
             disabled={busy}
             aria-busy={busy || undefined}
             onClick={() => {
               const fd = new FormData();
-              fd.set("lotId", lotId);
+              fd.set("lotId", item.openLotIds[0]);
               submit(item.id, actionCloseLot, fd, TOAST.lotClosed);
             }}
           >
             <TicketCheck />
-            Fechar lote
+            {compact ? null : "Fechar lote"}
           </Button>
-        ))}
+        ) : null}
         <Button
           type="button"
           variant="ghost"
-          size="sm"
+          {...secondary("Sair da fila")}
           disabled={busy}
           aria-busy={busy || undefined}
           className="hover:text-destructive"
@@ -150,7 +169,7 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
           }}
         >
           <LogOut />
-          Sair
+          {compact ? null : "Sair"}
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href={`/parties/${item.id}`}>
@@ -238,8 +257,10 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
           />
         ) : (
           <>
-            <Card className="hidden gap-0 overflow-hidden p-0 md:block">
-              <div className="grid grid-cols-[68px_minmax(180px,1.4fr)_minmax(150px,1fr)_minmax(120px,.8fr)_72px_auto] items-center border-b border-border/80 bg-muted/35 px-4 py-3 font-mono text-[9px] font-semibold tracking-[0.09em] text-muted-foreground uppercase">
+            <Card className="hidden gap-0 overflow-hidden p-0 xl:block">
+              <div
+                className={`${ROW_GRID} border-b border-border/80 bg-muted/35 py-3 font-mono text-[9px] font-semibold tracking-[0.09em] text-muted-foreground uppercase`}
+              >
                 <span>Rank</span>
                 <span>Festa</span>
                 <span>Quando</span>
@@ -251,7 +272,7 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                 {items.map((item, index) => (
                   <div
                     key={item.id}
-                    className="group grid grid-cols-[68px_minmax(180px,1.4fr)_minmax(150px,1fr)_minmax(120px,.8fr)_72px_auto] items-center border-b border-border/65 px-4 py-3 transition-colors last:border-0 hover:bg-muted/35"
+                    className={`${ROW_GRID} group border-b border-border/65 py-3 transition-colors last:border-0 hover:bg-muted/35`}
                   >
                     <span className="font-mono text-lg font-medium text-muted-foreground/70 tabular-nums group-first:text-primary">
                       {String(index + 1).padStart(2, "0")}
@@ -269,10 +290,15 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                         </Badge>
                       ) : null}
                     </div>
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <CalendarDays className="size-3.5" />
-                      {formatWhen(item.eventAt)}
-                    </span>
+                    <div className="min-w-0 pr-3 text-xs">
+                      <span className="flex items-center gap-2">
+                        <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{formatEventWhen(item.eventAt)}</span>
+                      </span>
+                      <span className="mt-1 block pl-[22px] text-[11px] text-muted-foreground">
+                        {item.countdown}
+                      </span>
+                    </div>
                     <div className="min-w-0 pr-3 text-xs">
                       <span className="block truncate">{item.lotLabels || "—"}</span>
                       {item.lotUrl ? (
@@ -287,13 +313,13 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                       ) : null}
                     </div>
                     <HeatValue heat={item.heat} />
-                    <div className="flex justify-end">{actions(item)}</div>
+                    <div className="flex justify-end">{actions(item, true)}</div>
                   </div>
                 ))}
               </div>
             </Card>
 
-            <ol className="space-y-3 md:hidden">
+            <ol className="space-y-3 xl:hidden">
               {items.map((item, index) => (
                 <li key={item.id}>
                   <Card className="gap-4 overflow-hidden p-4">
@@ -311,9 +337,10 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                           </Link>
                           <HeatValue heat={item.heat} />
                         </div>
-                        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <CalendarDays className="size-3.5" />
-                          {formatWhen(item.eventAt)}
+                        <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                          <CalendarDays className="size-3.5 shrink-0" />
+                          {formatEventWhen(item.eventAt)}
+                          <span className="text-muted-foreground/70">· {item.countdown}</span>
                         </p>
                       </div>
                     </div>
@@ -337,7 +364,7 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                       <Badge variant="outline">edição anterior</Badge>
                     ) : null}
                     <div className="-mx-1 flex flex-wrap border-t border-border/60 pt-3">
-                      {actions(item)}
+                      {actions(item, false)}
                     </div>
                   </Card>
                 </li>

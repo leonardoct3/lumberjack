@@ -6,7 +6,7 @@ import { rejectCandidate } from "@/catalog/reject";
 import { unlinkSignal } from "@/catalog/unlink";
 import { markPastParties } from "@/catalog/mark-past";
 import { linkOrphan } from "@/catalog/link-orphan";
-import { addLot, enqueueWatchlist } from "@/catalog/party";
+import { addLot, enqueueWatchlist, updateLot } from "@/catalog/party";
 import { closeLot, homeDestination, moveWatchlist } from "@/catalog/watchlist";
 
 const now = new Date("2026-09-03T15:00:00Z");
@@ -53,7 +53,7 @@ describe("catalog", () => {
       name: "ONIX",
       eventAt: new Date("2026-09-12T03:00:00Z"),
       lotLabel: "1º lote",
-    });
+    }, now);
     const party = await prisma.party.findUniqueOrThrow({ where: { id: r.partyId } });
     expect(party.name).toBe("ONIX");
     expect(party.watchlistPosition).toBe(1);
@@ -74,8 +74,8 @@ describe("catalog", () => {
       eventAt: new Date("2026-09-12T03:00:00Z"),
       lotLabel: "1º lote",
     };
-    await confirmCandidate(prisma, input);
-    await expect(confirmCandidate(prisma, input)).rejects.toThrow();
+    await confirmCandidate(prisma, input, now);
+    await expect(confirmCandidate(prisma, input, now)).rejects.toThrow();
     expect(await prisma.party.count()).toBe(1);
     expect(await prisma.lot.count()).toBe(1);
   });
@@ -364,5 +364,93 @@ describe("catalog", () => {
     });
     expect(lot.openedAt).toBeInstanceOf(Date);
     expect((await prisma.party.findUniqueOrThrow({ where: { id: party.id } })).watchlistPosition).toBe(1);
+  });
+
+  it("updateLot rewrites the commercial fields of an existing lot", async () => {
+    const party = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        status: "upcoming",
+      },
+    });
+    const { lotId } = await addLot(prisma, {
+      partyId: party.id,
+      label: "1º lote",
+      price: 80,
+      platform: "unknown",
+    });
+
+    await updateLot(prisma, {
+      lotId,
+      label: "1º lote — pista",
+      url: "https://sympla.com.br/onix",
+      price: 95.5,
+      platform: "sympla",
+    });
+
+    expect(await prisma.lot.findUniqueOrThrow({ where: { id: lotId } })).toMatchObject({
+      label: "1º lote — pista",
+      url: "https://sympla.com.br/onix",
+      officialPrice: 95.5,
+      platform: "sympla",
+    });
+  });
+
+  it("updateLot clears price and url when the operator empties them", async () => {
+    const party = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        status: "upcoming",
+      },
+    });
+    const { lotId } = await addLot(prisma, {
+      partyId: party.id,
+      label: "1º lote",
+      url: "https://example.com/onix",
+      price: 80,
+      platform: "sympla",
+    });
+
+    await updateLot(prisma, {
+      lotId,
+      label: "1º lote",
+      url: null,
+      price: null,
+      platform: "sympla",
+    });
+
+    expect(await prisma.lot.findUniqueOrThrow({ where: { id: lotId } })).toMatchObject({
+      url: null,
+      officialPrice: null,
+    });
+  });
+
+  it("updateLot leaves the open or closed state untouched", async () => {
+    const party = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        status: "upcoming",
+      },
+    });
+    const { lotId } = await addLot(prisma, { partyId: party.id, label: "1º lote" });
+    await closeLot(prisma, lotId, now);
+
+    await updateLot(prisma, {
+      lotId,
+      label: "1º lote",
+      url: null,
+      price: 120,
+      platform: "gandaya",
+    });
+
+    const lot = await prisma.lot.findUniqueOrThrow({ where: { id: lotId } });
+    expect(lot.closedAt).toEqual(now);
+    expect(lot.officialPrice).toBe(120);
   });
 });

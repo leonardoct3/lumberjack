@@ -2,7 +2,7 @@
 
 import type { JSX } from "react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   CircleAlert,
   Headphones,
@@ -50,12 +50,14 @@ const ROLE_LABEL = {
 export function SetupBoard(props: {
   connected: boolean;
   banner: SessionGuidance | null;
+  qrDataUrl: string | null;
   canLogout: boolean;
   listening: { id: string; name: string; waId: string }[];
   available: { id: string; name: string; waId: string }[];
   senders: { id: string; name: string; role: "admin" | "pista" | "unknown" }[];
 }): JSX.Element {
-  const { connected, banner, canLogout, listening, available, senders } = props;
+  const { connected, banner, qrDataUrl, canLogout, listening, available, senders } =
+    props;
   const duplicates = useMemo(
     () => duplicateNames([...listening, ...available]),
     [listening, available],
@@ -64,6 +66,15 @@ export function SetupBoard(props: {
   const [, start] = useTransition();
   const [pendingIds, setPendingIds] = useState(() => new Set<string>());
   const refresh = () => router.refresh();
+
+  // Baileys rotates the QR about every 20s; keep the board in sync while pairing.
+  useEffect(() => {
+    if (!qrDataUrl) return;
+    const id = window.setInterval(() => {
+      router.refresh();
+    }, 5_000);
+    return () => window.clearInterval(id);
+  }, [qrDataUrl, router]);
 
   function submit(
     id: string,
@@ -154,6 +165,35 @@ export function SetupBoard(props: {
           <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(classified).padStart(2, "0")}</p>
         </div>
       </div>
+
+      {qrDataUrl ? (
+        <Card className="flex flex-col items-center gap-5 p-6 md:flex-row md:items-start md:gap-8">
+          <div className="rounded-xl border border-border bg-white p-3">
+            <img
+              src={qrDataUrl}
+              alt="QR Code do WhatsApp para emparelhar o monitor"
+              width={280}
+              height={280}
+              className="size-[220px] md:size-[280px]"
+            />
+          </div>
+          <div className="max-w-md space-y-3 text-center md:text-left">
+            <div className="flex items-center justify-center gap-2 text-primary md:justify-start">
+              <QrCode className="size-4" aria-hidden="true" />
+              <p className="font-mono text-[10px] font-semibold tracking-[0.12em] uppercase">
+                Emparelhar WhatsApp
+              </p>
+            </div>
+            <h2 className="text-xl font-semibold tracking-[-0.03em]">
+              Escaneie o código no celular
+            </h2>
+            <p className="text-sm leading-6 text-muted-foreground">
+              No WhatsApp: Aparelhos conectados → Conectar aparelho. O código
+              renova sozinho a cada poucos segundos.
+            </p>
+          </div>
+        </Card>
+      ) : null}
 
       <section className="space-y-4">
         <SectionHeader

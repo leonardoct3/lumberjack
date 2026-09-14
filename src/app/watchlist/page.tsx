@@ -6,6 +6,7 @@ import {
 } from "@/components/watchlist/watchlist-board";
 import { prisma } from "@/db/client";
 import { latestSnapshot } from "@/jobs/refresh-heat";
+import { countdownLabel } from "@/lib/datetime";
 
 export const metadata: Metadata = { title: "Fila de compra" };
 
@@ -17,12 +18,16 @@ export default async function WatchlistPage() {
     }),
   ]);
 
+  // Computed here so server and client render the same relative label.
+  const now = Date.now();
   const items: WatchlistItem[] = parties.map((party, index) => {
     const openLots = party.lots.filter((lot) => lot.closedAt == null);
+    const eventAt = party.eventAt.toISOString();
     return {
       id: party.id,
       name: party.name,
-      eventAt: party.eventAt.toISOString(),
+      eventAt,
+      countdown: countdownLabel(eventAt, now),
       lotLabels: openLots.map((lot) => lot.label).filter(Boolean).join(", "),
       lotUrl: openLots.find((lot) => lot.url)?.url ?? null,
       heat: latestSnapshot(party.heatSnapshots)?.score ?? null,

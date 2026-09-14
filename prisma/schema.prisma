@@ -151,3 +151,20 @@ model HeatSnapshot {
   daysToEvent             Int
   score                   Int
 }
+
+enum WaState {
+  connected
+  qr
+  disconnected
+}
+
+/** Singleton row (`id = "wa"`) shared by the web board and the connector process. */
+model WaSession {
+  id            String    @id @default("wa")
+  state         WaState   @default(disconnected)
+  detail        String?
+  qr            String?
+  lastMessageAt DateTime?
+  heartbeatAt   DateTime?
+  updatedAt     DateTime  @updatedAt
+}

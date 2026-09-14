@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { PartyStatus, Platform } from "@prisma/client";
-import { addLot, enqueueWatchlist, updateParty } from "@/catalog/party";
+import { addLot, enqueueWatchlist, updateLot, updateParty } from "@/catalog/party";
 import { unlinkSignal } from "@/catalog/unlink";
 import { closeLot } from "@/catalog/watchlist";
 import { prisma } from "@/db/client";
@@ -55,6 +55,28 @@ export async function actionAddLot(formData: FormData) {
     url,
     price: priceRaw != null ? Number(priceRaw) : undefined,
     platform,
+  });
+  revalidateParty(partyId);
+}
+
+export async function actionUpdateLot(formData: FormData) {
+  const lotId = String(formData.get("lotId") ?? "");
+  const partyId = String(formData.get("partyId") ?? "");
+  const label = String(formData.get("label") ?? "").trim();
+  if (!lotId || !label) return;
+
+  const priceRaw = optionalString(formData.get("price"));
+  const price = priceRaw != null ? Number(priceRaw) : null;
+  const platformRaw = String(formData.get("platform") ?? "unknown");
+
+  await updateLot(prisma, {
+    lotId,
+    label,
+    url: optionalString(formData.get("url")) ?? null,
+    price: price != null && Number.isFinite(price) ? price : null,
+    platform: PLATFORMS.has(platformRaw as Platform)
+      ? (platformRaw as Platform)
+      : "unknown",
   });
   revalidateParty(partyId);
 }

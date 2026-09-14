@@ -8,12 +8,14 @@ export async function runAction(
   data: FormData,
   success: string,
   refresh: () => void,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await action(data);
     toast.success(success);
     refresh();
+    return true;
   } catch {
     toast.error(FAIL_TOAST);
+    return false;
   }
 }

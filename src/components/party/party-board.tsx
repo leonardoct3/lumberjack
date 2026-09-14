@@ -3,7 +3,7 @@
 import type { JSX } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -15,6 +15,7 @@ import {
   ListPlus,
   MessageSquareText,
   NotebookPen,
+  Pencil,
   Plus,
   Save,
   Tag,
@@ -27,6 +28,7 @@ import {
   actionCloseLot,
   actionEnqueueWatchlist,
   actionUnlinkSignal,
+  actionUpdateLot,
   actionUpdateParty,
 } from "@/app/actions/party";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -111,6 +113,7 @@ export function PartyBoard(props: {
   const router = useRouter();
   const [, start] = useTransition();
   const [pendingIds, setPendingIds] = useState(() => new Set<string>());
+  const [editingLotId, setEditingLotId] = useState<string | null>(null);
   const refresh = () => router.refresh();
 
   function submit(
@@ -118,17 +121,92 @@ export function PartyBoard(props: {
     action: (fd: FormData) => Promise<void>,
     fd: FormData,
     success: string,
+    onSuccess?: () => void,
   ) {
     setPendingIds((prev) => new Set(prev).add(id));
     start(() => {
-      void runAction(action, fd, success, refresh).finally(() =>
-        setPendingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        }),
-      );
+      void runAction(action, fd, success, refresh)
+        .then((ok) => {
+          if (ok) onSuccess?.();
+        })
+        .finally(() =>
+          setPendingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          }),
+        );
     });
+  }
+
+  function editLotButton(lot: PartyLot): JSX.Element {
+    const open = editingLotId === lot.id;
+    const label = open ? "Fechar edição do lote" : "Editar lote";
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        title={label}
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setEditingLotId(open ? null : lot.id)}
+      >
+        <Pencil />
+      </Button>
+    );
+  }
+
+  /** `scope` keeps the ids unique between the desktop table and the mobile cards. */
+  function lotForm(lot: PartyLot, scope: string): JSX.Element {
+    const busy = pendingIds.has(`lot-edit-${lot.id}`);
+    const field = (name: string) => `lot-${scope}-${lot.id}-${name}`;
+    return (
+      <form
+        className="grid gap-4 md:grid-cols-[1fr_1.5fr_.7fr_1fr_auto] md:items-end"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit(
+            `lot-edit-${lot.id}`,
+            actionUpdateLot,
+            new FormData(event.currentTarget),
+            TOAST.saved,
+            () => setEditingLotId(null),
+          );
+        }}
+      >
+        <input type="hidden" name="lotId" value={lot.id} />
+        <input type="hidden" name="partyId" value={party.id} />
+        <div className="space-y-2">
+          <Label htmlFor={field("label")}>Lote</Label>
+          <Input id={field("label")} name="label" defaultValue={lot.label} required disabled={busy} aria-busy={busy || undefined} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={field("url")}>Link de venda</Label>
+          <Input id={field("url")} name="url" type="url" defaultValue={lot.url ?? ""} placeholder="https://" disabled={busy} aria-busy={busy || undefined} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={field("price")}>Preço</Label>
+          <Input id={field("price")} name="price" type="number" step="0.01" defaultValue={lot.price} placeholder="0,00" disabled={busy} aria-busy={busy || undefined} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={field("platform")}>Plataforma</Label>
+          <select id={field("platform")} name="platform" defaultValue={lot.platform} disabled={busy} aria-busy={busy || undefined} className={selectClassName}>
+            {PLATFORMS.map((platform) => (
+              <option key={platform} value={platform}>{PLATFORM_LABEL[platform]}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="submit" disabled={busy} aria-busy={busy || undefined}>
+            <Save /> Salvar
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => setEditingLotId(null)}>
+            Cancelar
+          </Button>
+        </div>
+      </form>
+    );
   }
 
   const enqueueBusy = pendingIds.has("enqueue");
@@ -242,7 +320,8 @@ export function PartyBoard(props: {
                   {lots.map((lot) => {
                     const busy = pendingIds.has(`lot-${lot.id}`);
                     return (
-                      <TableRow key={lot.id}>
+                      <Fragment key={lot.id}>
+                      <TableRow>
                         <TableCell>
                           <div>
                             <p className="font-semibold">{lot.label || "Sem nome"}</p>
@@ -262,27 +341,38 @@ export function PartyBoard(props: {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          {lot.closedAt == null ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              aria-busy={busy || undefined}
-                              onClick={() => {
-                                const fd = new FormData();
-                                fd.set("lotId", lot.id);
-                                fd.set("partyId", party.id);
-                                submit(`lot-${lot.id}`, actionCloseLot, fd, TOAST.lotClosed);
-                              }}
-                            >
-                              <TicketCheck /> Fechar lote
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">{formatWhen(lot.closedAt)}</span>
-                          )}
+                          <div className="flex items-center justify-end gap-1">
+                            {lot.closedAt == null ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={busy}
+                                aria-busy={busy || undefined}
+                                onClick={() => {
+                                  const fd = new FormData();
+                                  fd.set("lotId", lot.id);
+                                  fd.set("partyId", party.id);
+                                  submit(`lot-${lot.id}`, actionCloseLot, fd, TOAST.lotClosed);
+                                }}
+                              >
+                                <TicketCheck /> Fechar lote
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">{formatWhen(lot.closedAt)}</span>
+                            )}
+                            {editLotButton(lot)}
+                          </div>
                         </TableCell>
                       </TableRow>
+                      {editingLotId === lot.id ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={6} className="bg-muted/25 p-5">
+                            {lotForm(lot, "table")}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                      </Fragment>
                     );
                   })}
                 </TableBody>
@@ -337,7 +427,23 @@ export function PartyBoard(props: {
                             <TicketCheck /> Fechar lote
                           </Button>
                         ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          aria-expanded={editingLotId === lot.id}
+                          onClick={() =>
+                            setEditingLotId(editingLotId === lot.id ? null : lot.id)
+                          }
+                        >
+                          <Pencil /> {editingLotId === lot.id ? "Fechar" : "Editar"}
+                        </Button>
                       </div>
+                      {editingLotId === lot.id ? (
+                        <div className="border-t border-border/60 pt-4">
+                          {lotForm(lot, "card")}
+                        </div>
+                      ) : null}
                     </Card>
                   </li>
                 );

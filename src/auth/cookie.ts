@@ -4,10 +4,41 @@ export const COOKIE = "lumberjack_session";
 /** How long a login stays valid. The expiry is signed into the token, not just the cookie. */
 export const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
+/** Reject these as production passwords; `changeme` is the historical README default. */
+const FORBIDDEN_PASSWORDS = new Set(["changeme", "password", "lumberjack"]);
+
+const MIN_PASSWORD_LENGTH = 12;
+
 const SIGNATURE_LENGTH = 64;
 
 export function authDisabled(): boolean {
   return process.env.AUTH_DISABLED === "1";
+}
+
+/**
+ * Production boot guard: refuse to start with auth off or a weak/default password.
+ * No-op outside production so local `AUTH_DISABLED=1` still works.
+ */
+export function assertAuthConfigured(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (env.NODE_ENV !== "production") return;
+
+  if (env.AUTH_DISABLED === "1") {
+    throw new Error(
+      "AUTH_DISABLED=1 is not allowed in production. Remove it and set AUTH_PASSWORD.",
+    );
+  }
+
+  const secret = env.AUTH_PASSWORD ?? "";
+  if (
+    secret.length < MIN_PASSWORD_LENGTH ||
+    FORBIDDEN_PASSWORDS.has(secret.toLowerCase())
+  ) {
+    throw new Error(
+      `AUTH_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters and not a known default.`,
+    );
+  }
 }
 
 /** Token is `expiry.signature`, so a stolen cookie stops working on its own. */

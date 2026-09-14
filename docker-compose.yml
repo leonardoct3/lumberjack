@@ -5,5 +5,12 @@ services:
       POSTGRES_USER: lumberjack
       POSTGRES_PASSWORD: lumberjack
       POSTGRES_DB: lumberjack
+    # 5433 on the host: 5432 belongs to another project on this machine.
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    # Without this the data lives in the container and dies with it.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

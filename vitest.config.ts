@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 // Integration tests truncate every table, so they must never reach the dev database.
 const DATABASE_URL =
   process.env.DATABASE_URL_TEST ??
-  "postgresql://lumberjack:lumberjack@localhost:5432/lumberjack_test";
+  "postgresql://lumberjack:lumberjack@localhost:5433/lumberjack_test";
 
 export default defineConfig({
   resolve: {

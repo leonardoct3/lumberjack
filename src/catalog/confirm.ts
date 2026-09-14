@@ -15,12 +15,12 @@ export type ConfirmCandidateInput = {
 export async function confirmCandidate(
   db: PrismaClient,
   input: ConfirmCandidateInput,
+  now: Date,
 ): Promise<{ partyId: string; lotId: string | null }> {
   if (!input.name || !input.eventAt) {
     throw new Error("confirmCandidate requires name and eventAt");
   }
 
-  const now = new Date();
   const status = isPastEvent(input.eventAt, now) ? "past" : "upcoming";
   const shouldCreateLot =
     input.lotLabel != null || input.url != null || input.officialPrice != null;

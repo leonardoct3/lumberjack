@@ -70,6 +70,7 @@ async function resetFixture(db: PrismaClient): Promise<void> {
 async function confirmFromMessage(
   db: PrismaClient,
   messageId: string,
+  now: Date,
 ): Promise<void> {
   const candidate = await db.partyCandidate.findUniqueOrThrow({
     where: { sourceMessageId: messageId },
@@ -85,7 +86,7 @@ async function confirmFromMessage(
     url: candidate.url ?? undefined,
     officialPrice: candidate.officialPrice ?? undefined,
     platform: candidate.platform,
-  });
+  }, now);
 }
 
 export async function seedFixture(
@@ -106,7 +107,7 @@ export async function seedFixture(
       addDays(now, -50),
     ),
   );
-  await confirmFromMessage(db, pastPromo.messageId);
+  await confirmFromMessage(db, pastPromo.messageId, now);
 
   const upcomingPromo = await ingestRawMessage(
     db,
@@ -116,7 +117,7 @@ export async function seedFixture(
       addDays(now, -3),
     ),
   );
-  await confirmFromMessage(db, upcomingPromo.messageId);
+  await confirmFromMessage(db, upcomingPromo.messageId, now);
 
   const rest: RawMessageInput[] = [
     adminInput("seed-admin-ruido-1", "bom dia galera", recent),

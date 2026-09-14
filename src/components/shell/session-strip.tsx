@@ -3,17 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowRight, CircleAlert, QrCode } from "lucide-react";
-import { sessionBanner } from "@/components/ui/session-banner";
+import type { SessionGuidance } from "@/components/ui/session-banner";
 
-export function SessionStrip({
-  state,
-  detail,
-}: {
-  state: "connected" | "qr" | "disconnected";
-  detail?: string;
-}) {
+export function SessionStrip({ banner }: { banner: SessionGuidance | null }) {
   const pathname = usePathname();
-  const banner = sessionBanner(state, detail);
   // Setup shows the same guidance in its own header.
   if (!banner || pathname === "/login" || pathname === "/setup") return null;
 

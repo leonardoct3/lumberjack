@@ -48,6 +48,30 @@ export async function addLot(
   });
 }
 
+/** Every field is required: the edit form always submits all of them, so empty means clear. */
+export type UpdateLotInput = {
+  lotId: string;
+  label: string;
+  url: string | null;
+  price: number | null;
+  platform: Platform;
+};
+
+export async function updateLot(
+  db: PrismaClient,
+  input: UpdateLotInput,
+): Promise<void> {
+  await db.lot.update({
+    where: { id: input.lotId },
+    data: {
+      label: input.label,
+      url: input.url,
+      officialPrice: input.price,
+      platform: input.platform,
+    },
+  });
+}
+
 export type UpdatePartyInput = {
   partyId: string;
   name: string;
