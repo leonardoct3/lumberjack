@@ -109,6 +109,9 @@ export function SetupBoard(props: {
       : banner?.tone === "danger"
         ? CircleAlert
         : Settings2;
+  const showSetupGuidance =
+    banner?.visibility === "setup" &&
+    (banner.kind !== "qr" || qrDataUrl == null);
 
   return (
     <div className="space-y-7">
@@ -117,26 +120,6 @@ export function SetupBoard(props: {
         title="Central de conexão"
         description="Controle o que o monitor escuta e como cada remetente participa da classificação."
         icon={Settings2}
-        meta={
-          banner ? (
-            <div
-              role="status"
-              className={`flex items-start gap-3 rounded-xl border px-4 py-3.5 ${
-                banner.tone === "danger"
-                  ? "border-destructive/25 bg-destructive/8 text-destructive"
-                  : "border-primary/25 bg-primary/8 text-primary"
-              }`}
-            >
-              <StatusIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">{banner.title}</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  {banner.step}
-                </p>
-              </div>
-            </div>
-          ) : null
-        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {connected ? (
@@ -155,6 +138,21 @@ export function SetupBoard(props: {
           </div>
         }
       />
+
+      {showSetupGuidance ? (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/8 px-4 py-3.5 text-primary"
+        >
+          <StatusIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{banner.title}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {banner.step}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-3 overflow-hidden rounded-[var(--radius)] border border-border/80 bg-card">
         <div className="p-4 md:p-5">

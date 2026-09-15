@@ -11,8 +11,7 @@ export function SessionStrip({ banner }: { banner: SessionGuidance | null }) {
   if (
     !banner ||
     banner.visibility === "setup" ||
-    pathname === "/login" ||
-    pathname === "/setup"
+    pathname === "/login"
   ) {
     return null;
   }
