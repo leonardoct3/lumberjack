@@ -28,7 +28,14 @@
   --sidebar-border: #26242a;
   --sidebar-accent: #1b1a1f;
   --sidebar-accent-foreground: #f4f1ea;
+  --sidebar-width: 252px;
+  --sidebar-motion-duration: 300ms;
+  --sidebar-motion-easing: cubic-bezier(0.22, 1, 0.36, 1);
   --font-geist: var(--font-geist-sans);
+}
+
+html[data-sidebar-state="collapsed"] {
+  --sidebar-width: 72px;
 }
 
 @theme inline {
@@ -97,6 +104,63 @@ textarea {
 
 select {
   color-scheme: dark;
+}
+
+@media (min-width: 768px) {
+  .sidebar-panel {
+    width: var(--sidebar-width);
+    transition: width var(--sidebar-motion-duration)
+      var(--sidebar-motion-easing);
+  }
+
+  .sidebar-main {
+    padding-left: var(--sidebar-width);
+    transition: padding-left var(--sidebar-motion-duration)
+      var(--sidebar-motion-easing);
+  }
+
+  .sidebar-copy,
+  .sidebar-brand > span:last-child {
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(0);
+    transition:
+      opacity 160ms ease 100ms,
+      transform 240ms var(--sidebar-motion-easing) 80ms,
+      visibility 0s;
+  }
+
+  .sidebar-toggle-icon {
+    transform: rotate(0deg);
+    transition: transform var(--sidebar-motion-duration)
+      var(--sidebar-motion-easing);
+  }
+
+  html[data-sidebar-state="collapsed"] .sidebar-copy,
+  html[data-sidebar-state="collapsed"] .sidebar-brand > span:last-child {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-8px);
+    transition:
+      opacity 100ms ease,
+      transform 180ms ease,
+      visibility 0s linear 180ms;
+  }
+
+  html[data-sidebar-state="collapsed"] .sidebar-toggle-icon {
+    transform: rotate(180deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-panel,
+  .sidebar-main,
+  .sidebar-copy,
+  .sidebar-brand > span:last-child,
+  .sidebar-toggle-icon {
+    transition: none !important;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

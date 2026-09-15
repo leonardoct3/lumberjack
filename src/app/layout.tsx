@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/shell/app-shell";
+import { SidebarPreferenceScript } from "@/components/shell/sidebar-preference-script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -33,8 +34,13 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       className={`dark ${GeistSans.variable} ${GeistMono.variable}`}
+      data-sidebar-state="expanded"
       data-scroll-behavior="smooth"
+      suppressHydrationWarning
     >
+      <head>
+        <SidebarPreferenceScript />
+      </head>
       <body className="font-sans">
         <AppShell>{children}</AppShell>
         <Toaster richColors position="bottom-right" closeButton />
