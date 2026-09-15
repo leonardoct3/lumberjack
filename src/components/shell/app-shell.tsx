@@ -1,5 +1,8 @@
 import { connection } from "next/server";
-import { sessionBanner } from "@/components/ui/session-banner";
+import {
+  monitorNavState,
+  sessionBanner,
+} from "@/components/ui/session-banner";
 import { readWaStatus } from "@/connector/status";
 import { prisma } from "@/db/client";
 import { AppNav } from "./app-nav";
@@ -10,11 +13,12 @@ import { ShellFrame } from "./shell-frame";
 export async function AppShell({ children }: { children: React.ReactNode }) {
   await connection();
   const status = await readWaStatus(prisma);
+  const guidance = sessionBanner(status, Date.now());
   return (
     <ShellChrome>
-      <AppNav />
+      <AppNav monitor={monitorNavState(guidance)} />
       <ShellFrame>
-        <SessionStrip banner={sessionBanner(status, Date.now())} />
+        <SessionStrip banner={guidance} />
         {children}
       </ShellFrame>
     </ShellChrome>

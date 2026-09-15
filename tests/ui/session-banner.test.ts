@@ -3,6 +3,7 @@ import type { WaStatus } from "@/connector/status";
 import {
   HEARTBEAT_STALE_MS,
   TRAFFIC_STALE_MS,
+  monitorNavState,
   sessionBanner,
 } from "@/components/ui/session-banner";
 
@@ -43,6 +44,8 @@ describe("sessionBanner", () => {
       now,
     );
     expect(guidance?.tone).toBe("danger");
+    expect(guidance?.kind).toBe("traffic-stale");
+    expect(guidance?.visibility).toBe("global");
     expect(guidance?.title).toBe("Conectado, mas sem mensagens chegando");
     expect(guidance?.step).toBe(
       "Reinicie o connector. Se seguir sem tráfego, pare tudo, apague data/wa-auth/ e escaneie um QR novo.",
@@ -82,15 +85,18 @@ describe("sessionBanner", () => {
       minutesAfter(HEARTBEAT_STALE_MS / 60_000 + 1),
     );
     expect(guidance?.tone).toBe("danger");
+    expect(guidance?.kind).toBe("heartbeat-stale");
     expect(guidance?.title).toBe("Monitor fora do ar");
     expect(guidance?.step).toBe(
       "O connector parou de responder. Reinicie o serviço e confira os logs.",
     );
   });
 
-  it("asks for the QR scan in lime when a code is waiting", () => {
+  it("asks for the QR scan with an accent when a code is waiting", () => {
     const guidance = sessionBanner(status({ state: "qr" }), NOW);
     expect(guidance?.tone).toBe("accent");
+    expect(guidance?.kind).toBe("qr");
+    expect(guidance?.visibility).toBe("setup");
     expect(guidance?.title).toBe("WhatsApp aguardando leitura do QR");
     expect(guidance?.step).toBe(
       "Abra Setup e escaneie o código em WhatsApp › Aparelhos conectados › Conectar aparelho.",
@@ -102,8 +108,10 @@ describe("sessionBanner", () => {
       status({ state: "disconnected", detail: "missing-session" }),
       NOW,
     );
-    expect(guidance?.tone).toBe("danger");
-    expect(guidance?.title).toBe("Monitor nunca foi ligado");
+    expect(guidance?.tone).toBe("accent");
+    expect(guidance?.kind).toBe("missing-session");
+    expect(guidance?.visibility).toBe("setup");
+    expect(guidance?.title).toBe("Monitor não configurado");
     expect(guidance?.step).toBe(
       "Suba o connector e escaneie o QR que aparece em Setup.",
     );
@@ -123,7 +131,9 @@ describe("sessionBanner", () => {
 
   it("tells the operator to restart the connector for any other drop", () => {
     const restart = {
+      kind: "disconnected",
       tone: "danger",
+      visibility: "global",
       title: "Monitor fora do ar",
       step: "Reinicie o connector para reconectar. As mensagens já salvas continuam no banco.",
     };
@@ -141,5 +151,62 @@ describe("sessionBanner", () => {
         sessionBanner(status({ state: "disconnected", detail }), NOW),
       ).toEqual(restart);
     }
+  });
+});
+
+describe("monitorNavState", () => {
+  it("shows a healthy connected state when no guidance is needed", () => {
+    expect(monitorNavState(null)).toEqual({
+      tone: "active",
+      title: "Monitor ativo",
+      description: "WhatsApp conectado",
+    });
+  });
+
+  it("turns initial setup into a persistent attention state", () => {
+    const guidance = sessionBanner(
+      status({ state: "disconnected", detail: "missing-session" }),
+      NOW,
+    );
+    expect(monitorNavState(guidance)).toEqual({
+      tone: "attention",
+      title: "Monitor não configurado",
+      description: "Configurar no Setup",
+    });
+  });
+
+  it("keeps operational failures visible as danger states", () => {
+    const guidance = sessionBanner(
+      status({ state: "disconnected", detail: "401" }),
+      NOW,
+    );
+    expect(monitorNavState(guidance)).toEqual({
+      tone: "danger",
+      title: "Sessão desconectada",
+      description: "Reconectar no Setup",
+    });
+  });
+
+  it("distinguishes QR pairing from initial setup", () => {
+    const guidance = sessionBanner(status({ state: "qr" }), NOW);
+    expect(monitorNavState(guidance)).toEqual({
+      tone: "attention",
+      title: "Aguardando QR",
+      description: "Concluir no Setup",
+    });
+  });
+
+  it("summarizes stale traffic without hiding the global outage", () => {
+    const now = minutesAfter(TRAFFIC_STALE_MS / 60_000 + 1);
+    const guidance = sessionBanner(
+      status({ heartbeatAt: new Date(now).toISOString() }),
+      now,
+    );
+    expect(guidance?.visibility).toBe("global");
+    expect(monitorNavState(guidance)).toEqual({
+      tone: "danger",
+      title: "Sem mensagens chegando",
+      description: "Verificar no Setup",
+    });
   });
 });

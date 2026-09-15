@@ -7,8 +7,15 @@ import type { SessionGuidance } from "@/components/ui/session-banner";
 
 export function SessionStrip({ banner }: { banner: SessionGuidance | null }) {
   const pathname = usePathname();
-  // Setup shows the same guidance in its own header.
-  if (!banner || pathname === "/login" || pathname === "/setup") return null;
+  // Setup and pairing states are persistent navigation status, not global outages.
+  if (
+    !banner ||
+    banner.visibility === "setup" ||
+    pathname === "/login" ||
+    pathname === "/setup"
+  ) {
+    return null;
+  }
 
   const cls =
     banner.tone === "danger"
@@ -18,7 +25,7 @@ export function SessionStrip({ banner }: { banner: SessionGuidance | null }) {
 
   return (
     <div
-      role="status"
+      role="alert"
       className={`mb-6 flex items-start gap-3 rounded-xl border px-4 py-3 ${cls}`}
     >
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

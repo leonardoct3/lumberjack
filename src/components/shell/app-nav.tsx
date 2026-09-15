@@ -4,11 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ChevronLeft,
+  CircleAlert,
   Flame,
   Inbox,
   ListOrdered,
+  QrCode,
   Settings2,
 } from "lucide-react";
+import type { MonitorNavState } from "@/components/ui/session-banner";
 import { isNavActive, NAV_LINKS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "./brand-mark";
@@ -21,9 +24,10 @@ const NAV_META = {
   "/setup": { icon: Settings2, description: "Conexões" },
 } as const;
 
-export function AppNav() {
+export function AppNav({ monitor }: { monitor: MonitorNavState }) {
   const pathname = usePathname();
   const { collapsed, toggle } = useSidebar();
+  const monitorTitle = `${monitor.title} — ${monitor.description}`;
   if (pathname === "/login") return null;
 
   return (
@@ -103,23 +107,53 @@ export function AppNav() {
           </div>
         </nav>
 
-        <div
-          title={collapsed ? "Operação ativa" : undefined}
-          className="mx-2 mb-3 flex min-h-14 items-center gap-3 overflow-hidden rounded-xl border border-sidebar-border bg-background/35 px-3 py-2.5"
+        <Link
+          href="/setup"
+          aria-label={monitorTitle}
+          title={collapsed ? monitorTitle : undefined}
+          className={cn(
+            "group mx-2 mb-3 flex min-h-14 items-center gap-3 overflow-hidden rounded-xl border px-3 py-2.5 no-underline transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+            monitor.tone === "active" &&
+              "border-sidebar-border bg-background/35 hover:bg-sidebar-accent/55",
+            monitor.tone === "attention" &&
+              "border-amber-400/25 bg-amber-400/8 hover:bg-amber-400/12",
+            monitor.tone === "danger" &&
+              "border-destructive/30 bg-destructive/8 hover:bg-destructive/12",
+          )}
         >
           <span className="grid size-8 shrink-0 place-items-center">
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-25" />
-              <span className="relative inline-flex size-2 rounded-full bg-primary" />
-            </span>
+            {monitor.tone === "active" ? (
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-25" />
+                <span className="relative inline-flex size-2 rounded-full bg-primary" />
+              </span>
+            ) : monitor.tone === "attention" ? (
+              <QrCode
+                className="size-4 text-amber-300"
+                aria-hidden="true"
+              />
+            ) : (
+              <CircleAlert
+                className="size-4 text-destructive"
+                aria-hidden="true"
+              />
+            )}
           </span>
           <span className="sidebar-copy shrink-0 whitespace-nowrap">
-            <span className="block text-xs font-medium">Operação</span>
+            <span
+              className={cn(
+                "block text-xs font-medium",
+                monitor.tone === "attention" && "text-amber-200",
+                monitor.tone === "danger" && "text-destructive",
+              )}
+            >
+              {monitor.title}
+            </span>
             <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">
-              Monitoramento ativo em São Paulo
+              {monitor.description}
             </span>
           </span>
-        </div>
+        </Link>
       </aside>
 
       <nav
@@ -129,10 +163,12 @@ export function AppNav() {
         {NAV_LINKS.map((link) => {
           const active = isNavActive(pathname, link.href);
           const { icon: Icon } = NAV_META[link.href];
+          const isSetup = link.href === "/setup";
           return (
             <Link
               key={link.href}
               href={link.href}
+              aria-label={isSetup ? `${link.label}: ${monitor.title}` : link.label}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-medium no-underline transition-colors",
@@ -141,7 +177,20 @@ export function AppNav() {
                   : "text-muted-foreground active:bg-accent",
               )}
             >
-              <Icon className="size-[18px]" aria-hidden="true" />
+              <span className="relative">
+                <Icon className="size-[18px]" aria-hidden="true" />
+                {isSetup ? (
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "absolute -top-1 -right-1 size-2 rounded-full ring-2 ring-sidebar",
+                      monitor.tone === "active" && "bg-primary",
+                      monitor.tone === "attention" && "bg-amber-300",
+                      monitor.tone === "danger" && "bg-destructive",
+                    )}
+                  />
+                ) : null}
+              </span>
               <span className="truncate">{link.label}</span>
             </Link>
           );

@@ -103,7 +103,12 @@ export function SetupBoard(props: {
     fd.set("listen", "0");
     submit(`group-${group.id}`, actionSetGroupListen, fd, TOAST.paused);
   }
-  const StatusIcon = banner?.tone === "danger" ? CircleAlert : QrCode;
+  const StatusIcon =
+    banner?.kind === "qr"
+      ? QrCode
+      : banner?.tone === "danger"
+        ? CircleAlert
+        : Settings2;
 
   return (
     <div className="space-y-7">
