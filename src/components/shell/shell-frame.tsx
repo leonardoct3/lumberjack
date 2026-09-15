@@ -16,7 +16,7 @@ export function ShellFrame({ children }: { children: React.ReactNode }) {
           Live desk
         </span>
       </div>
-      <div className="mx-auto w-full max-w-[1320px] px-4 pt-5 pb-28 md:px-8 md:pt-8 md:pb-12 xl:px-10">
+      <div className="mx-auto w-full max-w-[1600px] px-4 pt-5 pb-28 md:px-6 md:pt-8 md:pb-12 xl:px-8">
         <div className="page-enter">{children}</div>
       </div>
     </div>
