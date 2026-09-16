@@ -46,19 +46,39 @@ function dash(value: number | null): string {
 }
 
 function Score({ score }: { score: number | null }) {
-  if (score == null) {
-    return <span className="font-mono text-muted-foreground">—</span>;
-  }
-
-  const width = `${Math.min(100, Math.max(8, score * 10))}%`;
   return (
     <div className="min-w-16">
-      <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold text-primary tabular-nums">
-        <Flame className="size-3.5 fill-primary/20" aria-hidden="true" />
-        {score}
+      {/* One fixed-height flex box for both states: an inline box holding the
+          flame icon measures taller than bare text, which skewed the row. */}
+      <span
+        className={cn(
+          "flex h-5 items-center gap-1.5 font-mono text-sm tabular-nums",
+          score == null ? "text-muted-foreground" : "font-semibold text-primary",
+        )}
+      >
+        {score == null ? (
+          "—"
+        ) : (
+          <>
+            <Flame className="size-3.5 fill-primary/20" aria-hidden="true" />
+            {score}
+          </>
+        )}
       </span>
-      <span className="mt-1.5 block h-0.5 w-12 overflow-hidden rounded-full bg-border">
-        <span className="block h-full rounded-full bg-primary" style={{ width }} />
+      {/* The track renders even with nothing to fill: dropping it made the
+          unscored row shorter than every other one. */}
+      <span
+        className={cn(
+          "mt-1.5 block h-0.5 w-12 overflow-hidden rounded-full",
+          score == null ? "bg-border/45" : "bg-border",
+        )}
+      >
+        {score == null ? null : (
+          <span
+            className="block h-full rounded-full bg-primary"
+            style={{ width: `${Math.min(100, Math.max(8, score * 10))}%` }}
+          />
+        )}
       </span>
     </div>
   );
@@ -251,7 +271,8 @@ export function HeatBoard(props: {
                 </TableHeader>
                 <TableBody>
                   {rows.map((row, index) => (
-                    <TableRow key={row.id}>
+                    // Fixed height so a row never gets measured by its glyphs.
+                    <TableRow key={row.id} className="h-14">
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-[10px] text-muted-foreground/60">

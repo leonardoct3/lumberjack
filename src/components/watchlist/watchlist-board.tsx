@@ -12,6 +12,7 @@ import {
   Flame,
   ListOrdered,
   LogOut,
+  MoreHorizontal,
   TicketCheck,
 } from "lucide-react";
 import {
@@ -22,6 +23,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
 import { formatEventWhen } from "@/lib/datetime";
@@ -31,7 +40,7 @@ import { TOAST } from "@/lib/toast-copy";
 // Header and rows must share one template, or the `auto` action track sizes
 // differently in each and every column below drifts out of alignment.
 const ROW_GRID =
-  "grid grid-cols-[56px_minmax(200px,1.8fr)_minmax(150px,1fr)_minmax(130px,.8fr)_64px_240px] items-center px-4";
+  "grid grid-cols-[92px_minmax(220px,1.9fr)_minmax(150px,1fr)_minmax(130px,.8fr)_64px_140px] items-center px-4";
 
 export type WatchlistItem = {
   id: string;
@@ -84,92 +93,157 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
     });
   }
 
-  /** `compact` collapses the secondary actions to icons so the table row stays readable. */
-  function actions(item: WatchlistItem, compact: boolean) {
-    const busy = pendingIds.has(item.id);
-    const secondary = (label: string) =>
-      compact
-        ? { size: "icon-sm" as const, title: label, "aria-label": label }
-        : { size: "sm" as const };
+  function move(item: WatchlistItem, direction: "up" | "down") {
+    const fd = new FormData();
+    fd.set("partyId", item.id);
+    fd.set("direction", direction);
+    submit(
+      item.id,
+      actionMoveWatchlist,
+      fd,
+      direction === "up" ? TOAST.up : TOAST.down,
+    );
+  }
 
+  function closeSingleLot(item: WatchlistItem) {
+    const fd = new FormData();
+    fd.set("lotId", item.openLotIds[0]);
+    submit(item.id, actionCloseLot, fd, TOAST.lotClosed);
+  }
+
+  function leaveQueue(item: WatchlistItem) {
+    const fd = new FormData();
+    fd.set("partyId", item.id);
+    submit(item.id, actionRemoveFromWatchlist, fd, TOAST.leftQueue);
+  }
+
+  /**
+   * Reordering belongs next to the rank it changes. Both arrows always render,
+   * disabled at the ends, so the column never shifts from row to row.
+   */
+  function reorder(item: WatchlistItem) {
+    const busy = pendingIds.has(item.id);
     return (
-      <div
-        className={
-          compact
-            ? "flex items-center gap-1"
-            : "flex flex-wrap items-center gap-1"
-        }
-      >
+      <span className="flex items-center gap-0.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          title="Subir na fila"
+          aria-label="Subir na fila"
+          disabled={busy || !item.canMoveUp}
+          aria-busy={busy || undefined}
+          onClick={() => move(item, "up")}
+        >
+          <ArrowUp />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          title="Descer na fila"
+          aria-label="Descer na fila"
+          disabled={busy || !item.canMoveDown}
+          aria-busy={busy || undefined}
+          onClick={() => move(item, "down")}
+        >
+          <ArrowDown />
+        </Button>
+      </span>
+    );
+  }
+
+  /** Occasional actions get words instead of a row of cryptic icons. */
+  function rowMenu(item: WatchlistItem) {
+    const busy = pendingIds.has(item.id);
+    const oneLot = item.openLotIds.length === 1;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            title={`Mais ações de ${item.name}`}
+            aria-label={`Mais ações de ${item.name}`}
+            disabled={busy}
+            aria-busy={busy || undefined}
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuLabel className="truncate">{item.name}</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {/* With two or more open lots there is no telling which one this
+              would close, so that decision belongs on the party page. */}
+          <DropdownMenuItem
+            disabled={!oneLot}
+            onSelect={() => closeSingleLot(item)}
+          >
+            <TicketCheck />
+            {oneLot ? "Fechar lote" : "Vários lotes: feche no detalhe"}
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={() => leaveQueue(item)}>
+            <LogOut />
+            Sair da fila
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  /** Mobile cards have room for labels, so nothing hides behind a menu. */
+  function cardActions(item: WatchlistItem) {
+    const busy = pendingIds.has(item.id);
+    return (
+      <div className="flex flex-wrap items-center gap-1">
         {item.canMoveUp ? (
           <Button
             type="button"
             variant="ghost"
-            {...secondary("Subir")}
+            size="sm"
             disabled={busy}
             aria-busy={busy || undefined}
-            onClick={() => {
-              const fd = new FormData();
-              fd.set("partyId", item.id);
-              fd.set("direction", "up");
-              submit(item.id, actionMoveWatchlist, fd, TOAST.up);
-            }}
+            onClick={() => move(item, "up")}
           >
-            <ArrowUp />
-            {compact ? null : "Subir"}
+            <ArrowUp /> Subir
           </Button>
         ) : null}
         {item.canMoveDown ? (
           <Button
             type="button"
             variant="ghost"
-            {...secondary("Descer")}
+            size="sm"
             disabled={busy}
             aria-busy={busy || undefined}
-            onClick={() => {
-              const fd = new FormData();
-              fd.set("partyId", item.id);
-              fd.set("direction", "down");
-              submit(item.id, actionMoveWatchlist, fd, TOAST.down);
-            }}
+            onClick={() => move(item, "down")}
           >
-            <ArrowDown />
-            {compact ? null : "Descer"}
+            <ArrowDown /> Descer
           </Button>
         ) : null}
-        {/* With two or more open lots there is no telling which icon closes
-            which, so that decision belongs on the party page. */}
         {item.openLotIds.length === 1 ? (
           <Button
             type="button"
             variant="ghost"
-            {...secondary("Fechar lote")}
+            size="sm"
             disabled={busy}
             aria-busy={busy || undefined}
-            onClick={() => {
-              const fd = new FormData();
-              fd.set("lotId", item.openLotIds[0]);
-              submit(item.id, actionCloseLot, fd, TOAST.lotClosed);
-            }}
+            onClick={() => closeSingleLot(item)}
           >
-            <TicketCheck />
-            {compact ? null : "Fechar lote"}
+            <TicketCheck /> Fechar lote
           </Button>
         ) : null}
         <Button
           type="button"
           variant="ghost"
-          {...secondary("Sair da fila")}
+          size="sm"
+          className="hover:text-destructive"
           disabled={busy}
           aria-busy={busy || undefined}
-          className="hover:text-destructive"
-          onClick={() => {
-            const fd = new FormData();
-            fd.set("partyId", item.id);
-            submit(item.id, actionRemoveFromWatchlist, fd, TOAST.leftQueue);
-          }}
+          onClick={() => leaveQueue(item)}
         >
-          <LogOut />
-          {compact ? null : "Sair"}
+          <LogOut /> Sair
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href={`/parties/${item.id}`}>
@@ -272,20 +346,28 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                 {items.map((item, index) => (
                   <div
                     key={item.id}
-                    className={`${ROW_GRID} group border-b border-border/65 py-3 transition-colors last:border-0 hover:bg-muted/35`}
+                    className={`${ROW_GRID} group min-h-15 border-b border-border/65 py-3 transition-colors last:border-0 hover:bg-muted/35`}
                   >
-                    <span className="font-mono text-lg font-medium text-muted-foreground/70 tabular-nums group-first:text-primary">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <div className="min-w-0 pr-3">
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-lg font-medium text-muted-foreground/70 tabular-nums group-first:text-primary">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      {reorder(item)}
+                    </div>
+                    {/* Inline, because a stacked badge would make this the only
+                        two-and-a-half-line cell and the row taller than the rest. */}
+                    <div className="flex min-w-0 items-center gap-2 pr-3">
                       <Link
                         href={`/parties/${item.id}`}
-                        className="block truncate text-sm font-semibold text-foreground no-underline hover:text-primary"
+                        className="truncate text-sm font-semibold text-foreground no-underline hover:text-primary"
                       >
                         {item.name}
                       </Link>
                       {item.previousEdition ? (
-                        <Badge className="mt-1.5" variant="outline">
+                        <Badge
+                          variant="outline"
+                          title="Já existe uma edição passada desta festa no catálogo"
+                        >
                           edição anterior
                         </Badge>
                       ) : null}
@@ -313,7 +395,15 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                       ) : null}
                     </div>
                     <HeatValue heat={item.heat} />
-                    <div className="flex justify-end">{actions(item, true)}</div>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/parties/${item.id}`}>
+                          Detalhe
+                          <ArrowRight />
+                        </Link>
+                      </Button>
+                      {rowMenu(item)}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -364,7 +454,7 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                       <Badge variant="outline">edição anterior</Badge>
                     ) : null}
                     <div className="-mx-1 flex flex-wrap border-t border-border/60 pt-3">
-                      {actions(item, false)}
+                      {cardActions(item)}
                     </div>
                   </Card>
                 </li>
