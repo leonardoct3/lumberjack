@@ -188,7 +188,7 @@ async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
 
     const senderWaId = msg.key.participant ?? jid;
     const participant = meta?.participants.find((p) => p.id === senderWaId);
-    await ingestRawMessage(prisma, {
+    const ingested = await ingestRawMessage(prisma, {
       waMessageId: msg.key.id ?? `${jid}:${sentAtOf(msg).toISOString()}`,
       groupWaId: jid,
       groupName,
@@ -199,6 +199,9 @@ async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
       senderIsGroupAdmin:
         participant?.admin === "admin" || participant?.admin === "superadmin",
     });
+    if (ingested.duplicateOfId) {
+      console.log("cross-post collapsed", groupName, msg.pushName ?? senderWaId);
+    }
   } catch (err) {
     console.error("message ingest failed", msg.key.id, err);
   }

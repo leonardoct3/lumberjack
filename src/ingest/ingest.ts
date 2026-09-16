@@ -1,5 +1,10 @@
 import type { PrismaClient, SenderRole, SignalType } from "@prisma/client";
 import { classifyMessage } from "@/domain/classify";
+import {
+  DEDUPE_WINDOW_MS,
+  fingerprintText,
+  withinDedupeWindow,
+} from "@/domain/dedupe";
 import { extractCandidate } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
 
@@ -17,7 +22,7 @@ export type RawMessageInput = {
 export async function ingestRawMessage(
   db: PrismaClient,
   input: RawMessageInput,
-): Promise<{ created: boolean; messageId: string }> {
+): Promise<{ created: boolean; messageId: string; duplicateOfId?: string }> {
   const group = await db.group.upsert({
     where: { waId: input.groupWaId },
     create: {
@@ -52,8 +57,19 @@ export async function ingestRawMessage(
     where: { waMessageId: input.waMessageId },
   });
   if (existing) {
-    return { created: false, messageId: existing.id };
+    return {
+      created: false,
+      messageId: existing.id,
+      ...(existing.duplicateOfId
+        ? { duplicateOfId: existing.duplicateOfId }
+        : {}),
+    };
   }
+
+  const fingerprint = fingerprintText(input.text);
+  const duplicateOfId = fingerprint
+    ? await findCanonicalCopy(db, sender.id, fingerprint, input.sentAt)
+    : null;
 
   const message = await db.message.create({
     data: {
@@ -63,6 +79,8 @@ export async function ingestRawMessage(
       sentAt: input.sentAt,
       text: input.text,
       class: null,
+      fingerprint,
+      duplicateOfId,
     },
   });
 
@@ -75,6 +93,12 @@ export async function ingestRawMessage(
     where: { id: message.id },
     data: { class: messageClass },
   });
+
+  // A copy is kept for the audit trail and the reach badge, but the canonical
+  // message already produced the candidate or signal this text is worth.
+  if (duplicateOfId) {
+    return { created: true, messageId: message.id, duplicateOfId };
+  }
 
   if (messageClass === "admin_promo") {
     const extracted = extractCandidate(input.text, input.sentAt);
@@ -125,6 +149,39 @@ export async function ingestRawMessage(
   }
 
   return { created: true, messageId: message.id };
+}
+
+/**
+ * Earliest copy of this text from this sender still inside the window, following
+ * the chain so copies never point at each other. The window is measured from the
+ * canonical message, so reposts day after day each start a fresh intent.
+ */
+async function findCanonicalCopy(
+  db: PrismaClient,
+  senderId: string,
+  fingerprint: string,
+  sentAt: Date,
+): Promise<string | null> {
+  const prior = await db.message.findFirst({
+    where: {
+      senderId,
+      fingerprint,
+      sentAt: {
+        gte: new Date(sentAt.getTime() - DEDUPE_WINDOW_MS),
+        lte: new Date(sentAt.getTime() + DEDUPE_WINDOW_MS),
+      },
+    },
+    orderBy: { sentAt: "asc" },
+    select: {
+      id: true,
+      sentAt: true,
+      duplicateOf: { select: { id: true, sentAt: true } },
+    },
+  });
+  if (!prior) return null;
+
+  const canonical = prior.duplicateOf ?? prior;
+  return withinDedupeWindow(canonical.sentAt, sentAt) ? canonical.id : null;
 }
 
 function nextSenderRole(

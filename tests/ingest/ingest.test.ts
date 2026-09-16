@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/db/client";
 import { resetDb } from "../helpers/db";
+import { DEDUPE_WINDOW_MS } from "@/domain/dedupe";
 import { ingestRawMessage } from "@/ingest/ingest";
 
 const now = new Date("2026-09-03T15:00:00Z");
@@ -153,6 +154,180 @@ describe("ingestRawMessage", () => {
     expect(signal.type).toBe("demand");
     expect(signal.partyId).toBe(party.id);
     expect(await prisma.party.count()).toBe(1);
+  });
+
+  it("the same offer cross-posted to another group counts as one signal", async () => {
+    const party = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        status: "upcoming",
+      },
+    });
+
+    const first = await ingestRawMessage(
+      prisma,
+      baseInput({ waMessageId: "wa-a", text: "Vendo 2 pista ONIX!" }),
+    );
+    const second = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-b",
+        groupWaId: "g-outro",
+        groupName: "outro",
+        sentAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
+        text: "🎟️ vendo 2 pista onix 🔥",
+      }),
+    );
+
+    expect(second.created).toBe(true);
+    expect(second.duplicateOfId).toBe(first.messageId);
+    expect(await prisma.message.count()).toBe(2);
+
+    const copy = await prisma.message.findUniqueOrThrow({
+      where: { id: second.messageId },
+    });
+    expect(copy.class).toBe("pista_oferta");
+    expect(copy.duplicateOfId).toBe(first.messageId);
+    expect(copy.partyId).toBeNull();
+
+    const signals = await prisma.signal.findMany();
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.messageId).toBe(first.messageId);
+    expect(signals[0]?.partyId).toBe(party.id);
+  });
+
+  it("the same admin promo cross-posted creates a single candidate", async () => {
+    const promo = "ONIX\n1º lote R$ 80 05/09 https://www.sympla.com.br/onix";
+    const first = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-promo-a",
+        senderIsGroupAdmin: true,
+        text: promo,
+      }),
+    );
+    const second = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-promo-b",
+        groupWaId: "g-outro",
+        groupName: "outro",
+        senderIsGroupAdmin: true,
+        sentAt: new Date(now.getTime() + 60_000),
+        text: promo,
+      }),
+    );
+
+    expect(second.duplicateOfId).toBe(first.messageId);
+    const candidates = await prisma.partyCandidate.findMany();
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.sourceMessageId).toBe(first.messageId);
+  });
+
+  it("every copy points at the first occurrence, never at another copy", async () => {
+    const first = await ingestRawMessage(
+      prisma,
+      baseInput({ waMessageId: "wa-a", text: "vendo pista onix" }),
+    );
+    await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-b",
+        groupWaId: "g-2",
+        groupName: "dois",
+        sentAt: new Date(now.getTime() + 60_000),
+        text: "vendo pista onix",
+      }),
+    );
+    const third = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-c",
+        groupWaId: "g-3",
+        groupName: "tres",
+        sentAt: new Date(now.getTime() + 120_000),
+        text: "vendo pista onix",
+      }),
+    );
+
+    expect(third.duplicateOfId).toBe(first.messageId);
+    expect(
+      await prisma.message.count({ where: { duplicateOfId: first.messageId } }),
+    ).toBe(2);
+  });
+
+  it("the same text from another sender is its own intent", async () => {
+    const first = await ingestRawMessage(
+      prisma,
+      baseInput({ waMessageId: "wa-a", text: "vendo pista onix" }),
+    );
+    const second = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-b",
+        senderWaId: "s-2",
+        senderName: "Bruno",
+        text: "vendo pista onix",
+      }),
+    );
+
+    expect(second.duplicateOfId).toBeUndefined();
+    const copy = await prisma.message.findUniqueOrThrow({
+      where: { id: second.messageId },
+    });
+    expect(copy.duplicateOfId).toBeNull();
+    expect(copy.id).not.toBe(first.messageId);
+  });
+
+  it("a repost after the window is a renewed intent", async () => {
+    await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-30T03:00:00Z"),
+        status: "upcoming",
+      },
+    });
+
+    await ingestRawMessage(
+      prisma,
+      baseInput({ waMessageId: "wa-a", text: "vendo pista onix" }),
+    );
+    const later = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-b",
+        sentAt: new Date(now.getTime() + DEDUPE_WINDOW_MS + 1000),
+        text: "vendo pista onix",
+      }),
+    );
+
+    expect(later.duplicateOfId).toBeUndefined();
+    expect(await prisma.signal.count()).toBe(2);
+  });
+
+  it("messages without identifying content never collapse", async () => {
+    await ingestRawMessage(
+      prisma,
+      baseInput({ waMessageId: "wa-a", text: "🔥🔥🔥" }),
+    );
+    const second = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-b",
+        sentAt: new Date(now.getTime() + 60_000),
+        text: "🔥🔥🔥",
+      }),
+    );
+
+    expect(second.duplicateOfId).toBeUndefined();
+    const copy = await prisma.message.findUniqueOrThrow({
+      where: { id: second.messageId },
+    });
+    expect(copy.fingerprint).toBeNull();
+    expect(copy.duplicateOfId).toBeNull();
   });
 
   it("pista demand with only a past party of the same name creates no signal and no party", async () => {

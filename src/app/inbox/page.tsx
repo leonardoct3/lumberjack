@@ -10,19 +10,32 @@ import { toDatetimeLocal } from "@/lib/datetime";
 
 export const metadata: Metadata = { title: "Inbox de sinais" };
 
+/** How many groups saw this text. Spreading wide is itself a sign of urgency. */
+function groupReach(message: {
+  groupId: string;
+  duplicates: { groupId: string }[];
+}): number {
+  return new Set([message.groupId, ...message.duplicates.map((d) => d.groupId)])
+    .size;
+}
+
 export default async function InboxPage() {
   const [candidates, orphans, upcoming] = await Promise.all([
     prisma.partyCandidate.findMany({
       where: { status: "pending" },
-      include: { source: true },
+      include: {
+        source: { include: { duplicates: { select: { groupId: true } } } },
+      },
       orderBy: { createdAt: "desc" },
     }),
     prisma.message.findMany({
       where: {
         class: { in: ["pista_oferta", "pista_procura"] },
         signals: { none: {} },
+        // Copies of a cross-posted text ride along with their canonical message.
+        duplicateOfId: null,
       },
-      include: { sender: true },
+      include: { sender: true, duplicates: { select: { groupId: true } } },
       orderBy: { sentAt: "desc" },
     }),
     prisma.party.findMany({
@@ -41,6 +54,7 @@ export default async function InboxPage() {
   const mappedCandidates: InboxCandidate[] = candidates.map((candidate) => ({
     id: candidate.id,
     sourceText: candidate.source.text,
+    groupReach: groupReach(candidate.source),
     name: candidate.name ?? "",
     eventAtLocal: candidate.eventAt
       ? toDatetimeLocal(candidate.eventAt.toISOString())
@@ -55,6 +69,7 @@ export default async function InboxPage() {
     id: message.id,
     text: message.text,
     sender: message.sender.name ?? message.sender.waId,
+    groupReach: groupReach(message),
     defaultPartyId: matchParty(message.text, matchInputs)?.id ?? "",
   }));
 

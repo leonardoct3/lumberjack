@@ -66,6 +66,7 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 | `npm run db:migrate` | Prisma migrate |
 | `npm run db:seed` | Fixture: 1 listen group, 1 admin, 1 pista, ~20 classified messages (destructive) |
 | `npm run db:test:setup` | Create + migrate `lumberjack_test` |
+| `npm run db:dedupe` | Retrofit cross-post collapsing on old rows (dry run; add `-- --apply`) |
 | `npm run dev` | Next.js |
 | `npm run build` | Production Next.js build |
 | `npm run start` | Serve the production build |
@@ -76,6 +77,8 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 ## UI
 
 Professional dark board built with Tailwind CSS and shadcn/ui. Layout switches at a **768px** breakpoint (tables and top nav on desktop; cards and bottom nav on mobile). Feedback uses Sonner toasts. Requires Node **24** (`nvm use` reads `.nvmrc`).
+
+A seller blasting one offer into eight groups is one intent, not eight. Ingest fingerprints the message body (accents, case, punctuation and emoji stripped) and links every copy from the same sender within **24h** to the first occurrence via `Message.duplicateOf`. Copies are stored for the audit trail but produce no `Signal` and no `PartyCandidate`, so heat counts stop being multiplied by how widely someone spams. The Inbox hides copies and shows a `N grupos` badge on the canonical entry, since spreading wide is itself a sign of urgency. A repost the next day starts a fresh intent.
 
 WhatsApp syncs every group the account belongs to (hundreds), so group lists never render the whole set: Setup lists only the groups being listened to and reaches the rest through accent-insensitive search, and the Heat filter offers only listened groups plus the one currently in the query string.
 

@@ -8,6 +8,7 @@ import {
   Check,
   Inbox as InboxIcon,
   Link2,
+  Megaphone,
   MessageSquareText,
   Sparkles,
   Trash2,
@@ -30,6 +31,7 @@ import { TOAST } from "@/lib/toast-copy";
 export type InboxCandidate = {
   id: string;
   sourceText: string;
+  groupReach: number;
   name: string;
   eventAtLocal: string;
   lot: string;
@@ -41,8 +43,23 @@ export type InboxOrphan = {
   id: string;
   text: string;
   sender: string;
+  groupReach: number;
   defaultPartyId: string;
 };
+
+/** Cross-posting is collapsed into one entry, so surface how far it spread. */
+function ReachBadge({ groups }: { groups: number }) {
+  if (groups < 2) return null;
+  return (
+    <span
+      title={`A mesma mensagem apareceu em ${groups} grupos`}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 font-mono text-[10px] font-semibold text-primary tabular-nums"
+    >
+      <Megaphone className="size-3" aria-hidden="true" />
+      {groups} grupos
+    </span>
+  );
+}
 
 const selectClassName =
   "h-10 w-full rounded-[10px] border border-input bg-background/55 px-3.5 text-sm outline-none transition-colors hover:border-muted-foreground/45 focus:border-ring focus:ring-3 focus:ring-ring/12";
@@ -140,8 +157,11 @@ export function InboxBoard(props: {
                           <MessageSquareText className="size-3.5" />
                           Mensagem fonte
                         </p>
-                        <span className="font-mono text-[10px] text-muted-foreground/60">
-                          #{String(index + 1).padStart(2, "0")}
+                        <span className="flex items-center gap-2">
+                          <ReachBadge groups={candidate.groupReach} />
+                          <span className="font-mono text-[10px] text-muted-foreground/60">
+                            #{String(index + 1).padStart(2, "0")}
+                          </span>
                         </span>
                       </div>
                       <blockquote className="mt-3 border-l-2 border-primary/30 pl-3 text-sm leading-6 text-muted-foreground">
@@ -255,7 +275,10 @@ export function InboxBoard(props: {
                       <span className="grid size-7 place-items-center rounded-lg bg-muted">
                         <UserRound className="size-3.5" />
                       </span>
-                      <span>{orphan.sender}</span>
+                      <span className="min-w-0 truncate">{orphan.sender}</span>
+                      <span className="ml-auto">
+                        <ReachBadge groups={orphan.groupReach} />
+                      </span>
                     </div>
                     <p className="text-sm leading-6 text-foreground">{orphan.text}</p>
                     <form

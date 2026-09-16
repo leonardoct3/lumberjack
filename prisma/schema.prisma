@@ -80,6 +80,16 @@ model Message {
   candidate    PartyCandidate?
   signals      Signal[]
   createdAt    DateTime @default(now())
+
+  /** Body identity used to collapse the same text cross-posted to many groups. */
+  fingerprint   String?
+  /** Set on every copy after the first; the first occurrence stays canonical. */
+  duplicateOf   Message?  @relation("MessageDuplicates", fields: [duplicateOfId], references: [id])
+  duplicateOfId String?
+  duplicates    Message[] @relation("MessageDuplicates")
+
+  @@index([senderId, fingerprint, sentAt])
+  @@index([duplicateOfId])
 }
 
 model PartyCandidate {
