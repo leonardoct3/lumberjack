@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createPartyFromMessage } from "@/catalog/create-party-from-message";
 import { dismissOrphan, restoreOrphan } from "@/catalog/dismiss-orphan";
 import { linkOrphans } from "@/catalog/link-orphan";
+import { reclassifyMessage } from "@/catalog/reclassify-message";
 import { prisma } from "@/db/client";
 import type { MessageClass } from "@prisma/client";
 import { resetDb } from "../helpers/db";
@@ -279,5 +280,45 @@ describe("linkOrphans", () => {
       linkOrphans(prisma, { messageIds: [a.id], partyId: party.id }),
     ).rejects.toThrow(/upcoming/);
     expect(await prisma.signal.count()).toBe(0);
+  });
+});
+
+describe("reclassifyMessage", () => {
+  beforeEach(async () => {
+    await resetDb(prisma);
+  });
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("sends a message the rules skipped into the orphan queue", async () => {
+    const message = await orphan("m-1", "compro 2 pista ai galera", "ruido");
+
+    await reclassifyMessage(prisma, message.id, "pista_procura");
+
+    const stored = await prisma.message.findUniqueOrThrow({
+      where: { id: message.id },
+    });
+    expect(stored.class).toBe("pista_procura");
+    expect(stored.dismissedAt).toBeNull();
+  });
+
+  it("refuses a message that already carries a signal", async () => {
+    const message = await orphan("m-1", "compro 2 pista", "ruido");
+    const party = await prisma.party.create({
+      data: { name: "Rodeio", aliases: [], eventAt, status: "upcoming" },
+    });
+    await prisma.signal.create({
+      data: {
+        type: "offer",
+        partyId: party.id,
+        messageId: message.id,
+        senderId: message.senderId,
+      },
+    });
+
+    await expect(
+      reclassifyMessage(prisma, message.id, "pista_procura"),
+    ).rejects.toThrow(/signal/);
   });
 });

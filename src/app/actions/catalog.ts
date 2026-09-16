@@ -5,6 +5,7 @@ import { confirmCandidate } from "@/catalog/confirm";
 import { createPartyFromMessage } from "@/catalog/create-party-from-message";
 import { dismissOrphan, restoreOrphan } from "@/catalog/dismiss-orphan";
 import { linkOrphan, linkOrphans } from "@/catalog/link-orphan";
+import { reclassifyMessage } from "@/catalog/reclassify-message";
 import { rejectCandidate } from "@/catalog/reject";
 import { prisma } from "@/db/client";
 
@@ -78,6 +79,15 @@ export async function actionDismissOrphan(formData: FormData) {
 export async function actionRestoreOrphan(formData: FormData) {
   const messageId = String(formData.get("messageId") ?? "");
   await restoreOrphan(prisma, messageId);
+  revalidatePath("/inbox");
+}
+
+export async function actionReclassifyMessage(formData: FormData) {
+  const messageId = String(formData.get("messageId") ?? "");
+  const next = String(formData.get("class") ?? "");
+  if (next !== "pista_oferta" && next !== "pista_procura") return;
+
+  await reclassifyMessage(prisma, messageId, next);
   revalidatePath("/inbox");
 }
 

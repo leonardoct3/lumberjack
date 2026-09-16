@@ -21,6 +21,10 @@ import {
   type InboxOrphan,
 } from "@/components/inbox/orphan-list";
 import { SimilarWarning } from "@/components/inbox/similar-warning";
+import {
+  UnclassifiedList,
+  type UnclassifiedMessage,
+} from "@/components/inbox/unclassified-list";
 import { useRowActions } from "@/components/inbox/use-row-actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,7 +34,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
 import { TOAST } from "@/lib/toast-copy";
 
-export type { DismissedOrphan, InboxOrphan };
+export type { DismissedOrphan, InboxOrphan, UnclassifiedMessage };
 
 export type InboxCandidate = {
   id: string;
@@ -61,9 +65,10 @@ export function InboxBoard(props: {
   candidates: InboxCandidate[];
   orphans: InboxOrphan[];
   dismissed: DismissedOrphan[];
+  unclassified: UnclassifiedMessage[];
   upcoming: { id: string; name: string; aliases: string[] }[];
 }): JSX.Element {
-  const { candidates, orphans, dismissed, upcoming } = props;
+  const { candidates, orphans, dismissed, unclassified, upcoming } = props;
   const { pendingIds, submit } = useRowActions();
   // Tracks what the operator typed, so the duplicate warning follows the edit.
   const [names, setNames] = useState<Record<string, string>>({});
@@ -235,12 +240,13 @@ export function InboxBoard(props: {
           )}
         </section>
 
-        <div className="lg:sticky lg:top-8">
+        <div className="space-y-4 lg:sticky lg:top-8">
           <OrphanList
             orphans={orphans}
             dismissed={dismissed}
             upcoming={upcoming}
           />
+          <UnclassifiedList messages={unclassified} />
         </div>
       </div>
     </div>

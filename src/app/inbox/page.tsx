@@ -5,8 +5,10 @@ import {
   type DismissedOrphan,
   type InboxCandidate,
   type InboxOrphan,
+  type UnclassifiedMessage,
 } from "@/components/inbox/inbox-board";
 import { prisma } from "@/db/client";
+import { TICKET_NOUNS } from "@/domain/classify";
 import { extractCandidate } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
 import { formatWhen, toDatetimeLocal } from "@/lib/datetime";
@@ -23,6 +25,20 @@ function orphanWhere(dismissed: boolean): Prisma.MessageWhereInput {
   };
 }
 
+/**
+ * Ruído that mentions a ticket: the rules had no verb to go by, so the operator
+ * decides. Plain chatter stays out, or the drawer would be all "bom dia".
+ */
+const unclassifiedWhere: Prisma.MessageWhereInput = {
+  class: "ruido",
+  signals: { none: {} },
+  duplicateOfId: null,
+  dismissedAt: null,
+  OR: TICKET_NOUNS.map((noun) => ({
+    text: { contains: noun, mode: "insensitive" as const },
+  })),
+};
+
 /** How many groups saw this text. Spreading wide is itself a sign of urgency. */
 function groupReach(message: {
   groupId: string;
@@ -33,7 +49,7 @@ function groupReach(message: {
 }
 
 export default async function InboxPage() {
-  const [candidates, orphans, dismissed, upcoming] = await Promise.all([
+  const [candidates, orphans, dismissed, unclassified, upcoming] = await Promise.all([
     prisma.partyCandidate.findMany({
       where: { status: "pending" },
       include: {
@@ -51,6 +67,12 @@ export default async function InboxPage() {
       include: { sender: true },
       orderBy: { dismissedAt: "desc" },
       take: 30,
+    }),
+    prisma.message.findMany({
+      where: unclassifiedWhere,
+      include: { sender: true },
+      orderBy: { sentAt: "desc" },
+      take: 40,
     }),
     prisma.party.findMany({
       where: { status: "upcoming" },
@@ -102,12 +124,20 @@ export default async function InboxPage() {
     sentAtLabel: formatWhen(message.sentAt.toISOString()),
   }));
 
+  const mappedUnclassified: UnclassifiedMessage[] = unclassified.map((message) => ({
+    id: message.id,
+    text: message.text,
+    sender: message.sender.name ?? message.sender.waId,
+    sentAtLabel: formatWhen(message.sentAt.toISOString()),
+  }));
+
   return (
     <main>
       <InboxBoard
         candidates={mappedCandidates}
         orphans={mappedOrphans}
         dismissed={mappedDismissed}
+        unclassified={mappedUnclassified}
         upcoming={upcoming.map((party) => ({
           id: party.id,
           name: party.name,

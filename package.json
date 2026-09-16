@@ -19,7 +19,9 @@
     "db:test:setup": "docker compose exec -T postgres psql -U lumberjack -d postgres -c 'CREATE DATABASE lumberjack_test' || true && DATABASE_URL=postgresql://lumberjack:lumberjack@localhost:5433/lumberjack_test prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:dedupe": "tsx src/jobs/backfill-dedupe.ts",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:reclassify": "tsx src/jobs/reclassify.ts",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:demo": "tsx prisma/demo.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

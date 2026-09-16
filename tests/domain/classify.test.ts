@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { classifyMessage } from "@/domain/classify";
 
+function pista(text: string) {
+  return classifyMessage({ senderRole: "pista", text });
+}
+
 describe("classifyMessage", () => {
   it("marks admin lot/link as admin_promo", () => {
     expect(
@@ -19,30 +23,88 @@ describe("classifyMessage", () => {
     expect(classifyMessage({ senderRole: "admin", text: "vendo extra onix" })).toBe("ruido");
   });
 
-  it("classifies demand", () => {
-    expect(
-      classifyMessage({ senderRole: "pista", text: "procuro pista onix sexta" }),
-    ).toBe("pista_procura");
-  });
-
-  it("classifies offer", () => {
-    expect(classifyMessage({ senderRole: "unknown", text: "vendo camarote" })).toBe(
-      "pista_oferta",
-    );
-  });
-
-  it("prefers demand when both appear", () => {
-    expect(
-      classifyMessage({ senderRole: "pista", text: "vendo nao, procuro onix" }),
-    ).toBe("pista_procura");
+  it("prefers demand when both sides appear", () => {
+    expect(pista("vendo nao, procuro onix")).toBe("pista_procura");
   });
 
   it("never classifies pista as admin_promo even with a link", () => {
-    expect(
-      classifyMessage({
-        senderRole: "pista",
-        text: "olha o link https://www.sympla.com.br/x",
-      }),
-    ).toBe("ruido");
+    expect(pista("olha o link https://www.sympla.com.br/x")).toBe("ruido");
+  });
+});
+
+describe("classifyMessage demand vocabulary", () => {
+  // Every phrasing here showed up as `ruido` before, which is invisible in the
+  // Inbox: the operator saw only offers and concluded nobody ever asks.
+  it.each([
+    "compro 2 pista",
+    "compro 1 ingresso onix",
+    "comprar 2 pista alguem?",
+    "quem tem 2 pista?",
+    "quem vende pista?",
+    "quem ta vendendo pista?",
+    "alguem vendendo pista?",
+    "alguem ta vendendo?",
+    "procura-se 1 pista",
+    "procura 2 pistas",
+    "procurando 1 pista",
+    "busco 1 pista",
+    "pago acima da tabela por 2",
+    "pago 200 na pista",
+    "quero 2 pista",
+    "queria 1 ingresso",
+    "interesse em 1 pista",
+    "tenho interesse na pista",
+    "preciso de 1 pista",
+    "preciso de 2 pra hoje",
+    "procuro 2 pista",
+    "alguem tem pista?",
+    "tem alguem com pista?",
+  ])("reads %s as demand", (text) => {
+    expect(pista(text)).toBe("pista_procura");
+  });
+});
+
+describe("classifyMessage offer vocabulary", () => {
+  it.each([
+    "vendo 2 pista",
+    "vendendo 1 pista",
+    "tenho extra",
+    "revendo 1 pista",
+    "revenda de 2 pista",
+    "sobrou 1 pista",
+    "passo 2 pista pelo valor",
+    "transfiro 1 pista",
+    "repasso 1 ingresso",
+    "disponivel 2 pista",
+    "pista a venda",
+    "saida de 1 pista",
+    "saida onix hoje",
+    // A seller's call to action mentions interest, which is a demand word.
+    "vendo 2 pista, alguem interessado?",
+    "tenho 2 pista, quem quer?",
+  ])("reads %s as offer", (text) => {
+    expect(pista(text)).toBe("pista_oferta");
+  });
+});
+
+describe("classifyMessage restraint", () => {
+  // Weak words only count next to a ticket noun, or the Inbox fills with chat.
+  it.each([
+    "bom dia galera",
+    "alguem sabe que horas abre?",
+    "mando o comprovante depois",
+    "ja passou o horario",
+    "quero ir nessa",
+    "pago no pix quando chegar",
+    "sobrou muita gente na fila",
+    "preciso dormir",
+    "2 pista",
+    "obrigado!",
+  ])("leaves %s as ruido", (text) => {
+    expect(pista(text)).toBe("ruido");
+  });
+
+  it("does not read a payment receipt as buying", () => {
+    expect(pista("segue o comprovante da pista")).toBe("ruido");
   });
 });

@@ -1,0 +1,180 @@
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { prisma } from "@/db/client";
+import { reclassifyMessages } from "@/jobs/reclassify";
+import { resetDb } from "../helpers/db";
+
+const now = new Date("2026-09-16T12:00:00Z");
+
+async function seedBoard() {
+  const group = await prisma.group.create({
+    data: { waId: "g-1", name: "um", listen: true },
+  });
+  const sender = await prisma.sender.create({
+    data: { waId: "s-1", name: "Guilherme", role: "pista" },
+  });
+  const party = await prisma.party.create({
+    data: {
+      name: "ONIX Festival",
+      aliases: ["onix"],
+      eventAt: new Date("2026-10-24T23:00:00Z"),
+      status: "upcoming",
+    },
+  });
+  return { group, sender, party };
+}
+
+async function addMessage(
+  ids: { group: { id: string }; sender: { id: string } },
+  waMessageId: string,
+  text: string,
+  cls: "ruido" | "pista_oferta" | "pista_procura" | null,
+) {
+  return prisma.message.create({
+    data: {
+      waMessageId,
+      groupId: ids.group.id,
+      senderId: ids.sender.id,
+      sentAt: now,
+      text,
+      class: cls,
+    },
+  });
+}
+
+describe("reclassifyMessages", () => {
+  beforeEach(async () => {
+    await resetDb(prisma);
+  });
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("dry run reports the work without touching any row", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(ids, "a", "compro 2 pista onix", "ruido");
+
+    const report = await reclassifyMessages(prisma, { apply: false });
+    expect(report.becamePista).toBe(1);
+    expect(report.signalsCreated).toBe(1);
+
+    const stored = await prisma.message.findUniqueOrThrow({
+      where: { id: message.id },
+    });
+    expect(stored.class).toBe("ruido");
+    expect(await prisma.signal.count()).toBe(0);
+  });
+
+  it("recovers demand that the old vocabulary dropped as ruido", async () => {
+    const ids = await seedBoard();
+    await addMessage(ids, "a", "compro 2 pista onix", "ruido");
+    await addMessage(ids, "b", "quem tem pista onix?", "ruido");
+    await addMessage(ids, "c", "bom dia galera", "ruido");
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.becamePista).toBe(2);
+
+    const demand = await prisma.signal.findMany({ where: { type: "demand" } });
+    expect(demand).toHaveLength(2);
+    const noise = await prisma.message.findUniqueOrThrow({
+      where: { waMessageId: "c" },
+    });
+    expect(noise.class).toBe("ruido");
+    expect(noise.partyId).toBeNull();
+  });
+
+  it("leaves an unmatched message as an orphan with its new class", async () => {
+    const ids = await seedBoard();
+    await addMessage(ids, "a", "compro 2 pista do lollapalooza", "ruido");
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.becamePista).toBe(1);
+    expect(report.signalsCreated).toBe(0);
+
+    const stored = await prisma.message.findUniqueOrThrow({
+      where: { waMessageId: "a" },
+    });
+    expect(stored.class).toBe("pista_procura");
+    expect(stored.partyId).toBeNull();
+  });
+
+  it("retypes a signal when offer and demand swap places", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(
+      ids,
+      "a",
+      "alguem vendendo pista onix?",
+      "pista_oferta",
+    );
+    await prisma.signal.create({
+      data: {
+        type: "offer",
+        partyId: ids.party.id,
+        messageId: message.id,
+        senderId: ids.sender.id,
+      },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.flipped).toBe(1);
+    expect(report.signalsRetyped).toBe(1);
+
+    const signal = await prisma.signal.findFirstOrThrow();
+    expect(signal.type).toBe("demand");
+  });
+
+  it("reports but keeps a signal whose message is no longer pista", async () => {
+    const ids = await seedBoard();
+    // "preciso" alone used to be enough, so plain chatter became a signal.
+    const message = await addMessage(
+      ids,
+      "a",
+      "preciso dormir, boa noite",
+      "pista_procura",
+    );
+    await prisma.signal.create({
+      data: {
+        type: "demand",
+        partyId: ids.party.id,
+        messageId: message.id,
+        senderId: ids.sender.id,
+      },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.lostPista).toBe(1);
+    expect(report.signalsToReview).toBe(1);
+    expect(await prisma.signal.count()).toBe(1);
+  });
+
+  it("never gives a cross-posted copy its own signal", async () => {
+    const ids = await seedBoard();
+    const canonical = await addMessage(ids, "a", "compro 2 pista onix", "ruido");
+    const copy = await addMessage(ids, "b", "compro 2 pista onix", "ruido");
+    await prisma.message.update({
+      where: { id: copy.id },
+      data: { duplicateOfId: canonical.id },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.becamePista).toBe(2);
+    expect(report.signalsCreated).toBe(1);
+
+    const stored = await prisma.message.findUniqueOrThrow({
+      where: { id: copy.id },
+    });
+    expect(stored.class).toBe("pista_procura");
+    expect(stored.partyId).toBeNull();
+  });
+
+  it("is idempotent", async () => {
+    const ids = await seedBoard();
+    await addMessage(ids, "a", "compro 2 pista onix", "ruido");
+
+    await reclassifyMessages(prisma, { apply: true });
+    const second = await reclassifyMessages(prisma, { apply: true });
+
+    expect(second.changed).toBe(0);
+    expect(second.signalsCreated).toBe(0);
+    expect(await prisma.signal.count()).toBe(1);
+  });
+});
