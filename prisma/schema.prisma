@@ -81,6 +81,9 @@ model Message {
   signals      Signal[]
   createdAt    DateTime @default(now())
 
+  /** Operator sent this orphan away without linking it; keeps the Inbox drainable. */
+  dismissedAt  DateTime?
+
   /** Body identity used to collapse the same text cross-posted to many groups. */
   fingerprint   String?
   /** Set on every copy after the first; the first occurrence stays canonical. */

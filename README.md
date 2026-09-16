@@ -78,6 +78,8 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 
 Professional dark board built with Tailwind CSS and shadcn/ui. Layout switches at a **768px** breakpoint (tables and top nav on desktop; cards and bottom nav on mobile). Feedback uses Sonner toasts. Requires Node **24** (`nvm use` reads `.nvmrc`).
 
+The Inbox has to be drainable, so an orphan signal has three exits: link it to an active party, **create the party from the message itself** (no lot, so `canAppearOnWatchlist` keeps it out of the buy queue until an official lot exists — it only ranks on Heat), or dismiss it (`Message.dismissedAt`, reversible from a collapsed list at the bottom). Multi-select links a whole batch at once, and when every selected message points at the same suggestion the bar preselects it: create the party once, tick the rest, confirm.
+
 A seller blasting one offer into eight groups is one intent, not eight. Ingest fingerprints the message body (accents, case, punctuation and emoji stripped) and links every copy from the same sender within **24h** to the first occurrence via `Message.duplicateOf`. Copies are stored for the audit trail but produce no `Signal` and no `PartyCandidate`, so heat counts stop being multiplied by how widely someone spams. The Inbox hides copies and shows a `N grupos` badge on the canonical entry, since spreading wide is itself a sign of urgency. A repost the next day starts a fresh intent.
 
 WhatsApp syncs every group the account belongs to (hundreds), so group lists never render the whole set: Setup lists only the groups being listened to and reaches the rest through accent-insensitive search, and the Heat filter offers only listened groups plus the one currently in the query string.

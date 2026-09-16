@@ -1,10 +1,7 @@
 "use client";
 
 import type { JSX } from "react";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
 import {
-  ArrowRight,
   Check,
   Inbox as InboxIcon,
   Link2,
@@ -12,21 +9,26 @@ import {
   MessageSquareText,
   Sparkles,
   Trash2,
-  UserRound,
 } from "lucide-react";
 import {
   actionConfirmCandidate,
-  actionLinkOrphan,
   actionRejectCandidate,
 } from "@/app/actions/catalog";
+import {
+  OrphanList,
+  type DismissedOrphan,
+  type InboxOrphan,
+} from "@/components/inbox/orphan-list";
+import { useRowActions } from "@/components/inbox/use-row-actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
-import { runAction } from "@/lib/run-action";
 import { TOAST } from "@/lib/toast-copy";
+
+export type { DismissedOrphan, InboxOrphan };
 
 export type InboxCandidate = {
   id: string;
@@ -37,14 +39,6 @@ export type InboxCandidate = {
   lot: string;
   url: string;
   price: string;
-};
-
-export type InboxOrphan = {
-  id: string;
-  text: string;
-  sender: string;
-  groupReach: number;
-  defaultPartyId: string;
 };
 
 /** Cross-posting is collapsed into one entry, so surface how far it spread. */
@@ -61,37 +55,14 @@ function ReachBadge({ groups }: { groups: number }) {
   );
 }
 
-const selectClassName =
-  "h-10 w-full rounded-[10px] border border-input bg-background/55 px-3.5 text-sm outline-none transition-colors hover:border-muted-foreground/45 focus:border-ring focus:ring-3 focus:ring-ring/12";
-
 export function InboxBoard(props: {
   candidates: InboxCandidate[];
   orphans: InboxOrphan[];
+  dismissed: DismissedOrphan[];
   upcoming: { id: string; name: string }[];
 }): JSX.Element {
-  const { candidates, orphans, upcoming } = props;
-  const router = useRouter();
-  const [, start] = useTransition();
-  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
-  const refresh = () => router.refresh();
-
-  function submit(
-    id: string,
-    action: (fd: FormData) => Promise<void>,
-    fd: FormData,
-    success: string,
-  ) {
-    setPendingIds((prev) => new Set(prev).add(id));
-    start(() => {
-      void runAction(action, fd, success, refresh).finally(() =>
-        setPendingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        }),
-      );
-    });
-  }
+  const { candidates, orphans, dismissed, upcoming } = props;
+  const { pendingIds, submit } = useRowActions();
 
   const total = candidates.length + orphans.length;
 
@@ -252,62 +223,13 @@ export function InboxBoard(props: {
           )}
         </section>
 
-        <section className="space-y-4 lg:sticky lg:top-8">
-          <SectionHeader
-            title="Sinais órfãos"
-            count={orphans.length}
-            description="Vincule mensagens reconhecidas a uma festa ativa."
+        <div className="lg:sticky lg:top-8">
+          <OrphanList
+            orphans={orphans}
+            dismissed={dismissed}
+            upcoming={upcoming}
           />
-          {orphans.length === 0 ? (
-            <EmptyState
-              title="Nenhum órfão"
-              description="Todos os sinais reconhecidos já têm destino."
-              icon={Link2}
-              compact
-            />
-          ) : (
-            <div className="space-y-3">
-              {orphans.map((orphan) => {
-                const busy = pendingIds.has(orphan.id);
-                return (
-                  <Card key={orphan.id} className="gap-4 p-4">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="grid size-7 place-items-center rounded-lg bg-muted">
-                        <UserRound className="size-3.5" />
-                      </span>
-                      <span className="min-w-0 truncate">{orphan.sender}</span>
-                      <span className="ml-auto">
-                        <ReachBadge groups={orphan.groupReach} />
-                      </span>
-                    </div>
-                    <p className="text-sm leading-6 text-foreground">{orphan.text}</p>
-                    <form
-                      className="space-y-3"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submit(orphan.id, actionLinkOrphan, new FormData(event.currentTarget), TOAST.linked);
-                      }}
-                    >
-                      <input type="hidden" name="messageId" value={orphan.id} />
-                      <div className="space-y-2">
-                        <Label htmlFor={`party-${orphan.id}`}>Vincular à festa</Label>
-                        <select id={`party-${orphan.id}`} name="partyId" defaultValue={orphan.defaultPartyId} required disabled={busy} aria-busy={busy || undefined} className={selectClassName}>
-                          <option value="" disabled>Selecionar festa</option>
-                          {upcoming.map((party) => (
-                            <option key={party.id} value={party.id}>{party.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <Button type="submit" variant="outline" className="w-full" disabled={busy} aria-busy={busy || undefined}>
-                        <Link2 /> Vincular mensagem <ArrowRight />
-                      </Button>
-                    </form>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </section>
+        </div>
       </div>
     </div>
   );

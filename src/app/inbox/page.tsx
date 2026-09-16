@@ -1,14 +1,27 @@
 import type { Metadata } from "next";
+import type { Prisma } from "@prisma/client";
 import {
   InboxBoard,
+  type DismissedOrphan,
   type InboxCandidate,
   type InboxOrphan,
 } from "@/components/inbox/inbox-board";
 import { prisma } from "@/db/client";
+import { extractCandidate } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
-import { toDatetimeLocal } from "@/lib/datetime";
+import { formatWhen, toDatetimeLocal } from "@/lib/datetime";
 
 export const metadata: Metadata = { title: "Inbox de sinais" };
+
+/** Copies of a cross-posted text ride along with their canonical message. */
+function orphanWhere(dismissed: boolean): Prisma.MessageWhereInput {
+  return {
+    class: { in: ["pista_oferta", "pista_procura"] },
+    signals: { none: {} },
+    duplicateOfId: null,
+    dismissedAt: dismissed ? { not: null } : null,
+  };
+}
 
 /** How many groups saw this text. Spreading wide is itself a sign of urgency. */
 function groupReach(message: {
@@ -20,7 +33,7 @@ function groupReach(message: {
 }
 
 export default async function InboxPage() {
-  const [candidates, orphans, upcoming] = await Promise.all([
+  const [candidates, orphans, dismissed, upcoming] = await Promise.all([
     prisma.partyCandidate.findMany({
       where: { status: "pending" },
       include: {
@@ -29,14 +42,15 @@ export default async function InboxPage() {
       orderBy: { createdAt: "desc" },
     }),
     prisma.message.findMany({
-      where: {
-        class: { in: ["pista_oferta", "pista_procura"] },
-        signals: { none: {} },
-        // Copies of a cross-posted text ride along with their canonical message.
-        duplicateOfId: null,
-      },
+      where: orphanWhere(false),
       include: { sender: true, duplicates: { select: { groupId: true } } },
       orderBy: { sentAt: "desc" },
+    }),
+    prisma.message.findMany({
+      where: orphanWhere(true),
+      include: { sender: true },
+      orderBy: { dismissedAt: "desc" },
+      take: 30,
     }),
     prisma.party.findMany({
       where: { status: "upcoming" },
@@ -65,12 +79,27 @@ export default async function InboxPage() {
       candidate.officialPrice != null ? String(candidate.officialPrice) : "",
   }));
 
-  const mappedOrphans: InboxOrphan[] = orphans.map((message) => ({
+  const mappedOrphans: InboxOrphan[] = orphans.map((message) => {
+    // Pista text rarely names a party cleanly, but it usually carries the date.
+    const guessedEventAt = extractCandidate(message.text, message.sentAt).eventAt;
+    return {
+      id: message.id,
+      text: message.text,
+      sender: message.sender.name ?? message.sender.waId,
+      groupReach: groupReach(message),
+      sentAtLabel: formatWhen(message.sentAt.toISOString()),
+      suggestedEventAtLocal: guessedEventAt
+        ? toDatetimeLocal(guessedEventAt.toISOString())
+        : "",
+      defaultPartyId: matchParty(message.text, matchInputs)?.id ?? "",
+    };
+  });
+
+  const mappedDismissed: DismissedOrphan[] = dismissed.map((message) => ({
     id: message.id,
     text: message.text,
     sender: message.sender.name ?? message.sender.waId,
-    groupReach: groupReach(message),
-    defaultPartyId: matchParty(message.text, matchInputs)?.id ?? "",
+    sentAtLabel: formatWhen(message.sentAt.toISOString()),
   }));
 
   return (
@@ -78,6 +107,7 @@ export default async function InboxPage() {
       <InboxBoard
         candidates={mappedCandidates}
         orphans={mappedOrphans}
+        dismissed={mappedDismissed}
         upcoming={upcoming.map((party) => ({
           id: party.id,
           name: party.name,
