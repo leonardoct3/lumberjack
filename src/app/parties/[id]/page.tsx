@@ -2,10 +2,12 @@ import { notFound } from "next/navigation";
 import {
   PartyBoard,
   type PartyLot,
+  type PartyMergeTarget,
   type PartyTimelineItem,
 } from "@/components/party/party-board";
 import { prisma } from "@/db/client";
 import { canAppearOnWatchlist } from "@/domain/gates";
+import { findSimilarParties } from "@/domain/similar";
 
 export default async function PartyDetailPage({
   params,
@@ -28,6 +30,27 @@ export default async function PartyDetailPage({
     },
   });
   if (!party) notFound();
+
+  const others = await prisma.party.findMany({
+    where: { id: { not: party.id } },
+    select: { id: true, name: true, aliases: true, eventAt: true },
+    orderBy: { eventAt: "desc" },
+  });
+  const similarIds = new Set(
+    findSimilarParties(party.name, others).map((other) => other.id),
+  );
+  // Stable sort keeps the date order inside each half.
+  const mergeTargets: PartyMergeTarget[] = others
+    .slice()
+    .sort(
+      (a, b) => Number(similarIds.has(b.id)) - Number(similarIds.has(a.id)),
+    )
+    .map((other) => ({
+      id: other.id,
+      name: other.name,
+      eventAt: other.eventAt.toISOString(),
+      similar: similarIds.has(other.id),
+    }));
 
   const upcoming = party.status === "upcoming";
   const noBuy = party.status === "past" || party.status === "cancelled";
@@ -104,6 +127,8 @@ export default async function PartyDetailPage({
         watchlistEligible={watchlistEligible}
         lots={lots}
         timeline={timeline}
+        mergeTargets={mergeTargets}
+        linkedMessages={party.messages.length}
       />
     </main>
   );

@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SectionHeader } from "@/components/ui/page-header";
 import { TOAST } from "@/lib/toast-copy";
+import { SimilarWarning } from "./similar-warning";
 import { useRowActions } from "./use-row-actions";
 
 export type InboxOrphan = {
@@ -69,12 +70,13 @@ function ReachBadge({ groups }: { groups: number }) {
 export function OrphanList(props: {
   orphans: InboxOrphan[];
   dismissed: DismissedOrphan[];
-  upcoming: { id: string; name: string }[];
+  upcoming: { id: string; name: string; aliases: string[] }[];
 }): JSX.Element {
   const { orphans, dismissed, upcoming } = props;
   const { pendingIds, submit } = useRowActions();
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
   const [selected, setSelected] = useState(() => new Set<string>());
   const [bulkPartyId, setBulkPartyId] = useState("");
 
@@ -95,6 +97,16 @@ export function OrphanList(props: {
     return ids.size === 1 && only ? only : "";
   }, [selectedOrphans]);
   const effectivePartyId = bulkPartyId || sharedSuggestion;
+
+  function openCreate(id: string) {
+    setCreatingFor(id);
+    setNewName("");
+  }
+
+  function closeCreate() {
+    setCreatingFor(null);
+    setNewName("");
+  }
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -218,7 +230,7 @@ export function OrphanList(props: {
                         actionCreatePartyFromMessage,
                         new FormData(event.currentTarget),
                         TOAST.partyCreated,
-                        () => setCreatingFor(null),
+                        closeCreate,
                       );
                     }}
                   >
@@ -233,10 +245,13 @@ export function OrphanList(props: {
                         name="name"
                         placeholder="Ex.: Rodeio Jaguariúna"
                         required
+                        value={newName}
+                        onChange={(event) => setNewName(event.target.value)}
                         disabled={busy}
                         aria-busy={busy || undefined}
                       />
                     </div>
+                    <SimilarWarning name={newName} parties={upcoming} />
                     <div className="space-y-2">
                       <Label htmlFor={`new-eventAt-${orphan.id}`}>Data e hora</Label>
                       <Input
@@ -268,7 +283,7 @@ export function OrphanList(props: {
                         variant="ghost"
                         size="sm"
                         disabled={busy}
-                        onClick={() => setCreatingFor(null)}
+                        onClick={closeCreate}
                       >
                         Cancelar
                       </Button>
@@ -336,7 +351,7 @@ export function OrphanList(props: {
                         title="Criar festa a partir desta mensagem"
                         aria-label="Criar festa a partir desta mensagem"
                         disabled={busy}
-                        onClick={() => setCreatingFor(orphan.id)}
+                        onClick={() => openCreate(orphan.id)}
                       >
                         <CalendarPlus />
                       </Button>

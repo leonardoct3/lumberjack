@@ -17,4 +17,6 @@ export const TOAST = {
   paused: "Pausado",
   enrolled: "Entrou na fila",
   lotOpened: "Lote aberto",
+  merged: "Festas fundidas",
+  discarded: "Festa descartada",
 } as const;

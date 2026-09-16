@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import type { PartyStatus, Platform } from "@prisma/client";
+import { discardParty } from "@/catalog/discard-party";
+import { mergeParties } from "@/catalog/merge-parties";
 import { addLot, enqueueWatchlist, updateLot, updateParty } from "@/catalog/party";
 import { unlinkSignal } from "@/catalog/unlink";
 import { closeLot } from "@/catalog/watchlist";
@@ -99,6 +101,27 @@ export async function actionEnqueueWatchlist(formData: FormData) {
   const partyId = String(formData.get("partyId") ?? "");
   await enqueueWatchlist(prisma, partyId);
   revalidateParty(partyId);
+}
+
+/** The current party is the duplicate: it folds into the chosen survivor. */
+export async function actionMergeParty(formData: FormData) {
+  const sourceId = String(formData.get("partyId") ?? "");
+  const targetId = String(formData.get("targetId") ?? "");
+  if (!sourceId || !targetId || sourceId === targetId) return;
+
+  await mergeParties(prisma, { sourceId, targetId });
+  revalidateParty(sourceId);
+  revalidateParty(targetId);
+  revalidatePath("/inbox");
+}
+
+export async function actionDiscardParty(formData: FormData) {
+  const partyId = String(formData.get("partyId") ?? "");
+  if (!partyId) return;
+
+  await discardParty(prisma, partyId);
+  revalidateParty(partyId);
+  revalidatePath("/inbox");
 }
 
 function revalidateParty(partyId: string) {

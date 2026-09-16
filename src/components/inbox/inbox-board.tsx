@@ -1,6 +1,7 @@
 "use client";
 
 import type { JSX } from "react";
+import { useState } from "react";
 import {
   Check,
   Inbox as InboxIcon,
@@ -19,6 +20,7 @@ import {
   type DismissedOrphan,
   type InboxOrphan,
 } from "@/components/inbox/orphan-list";
+import { SimilarWarning } from "@/components/inbox/similar-warning";
 import { useRowActions } from "@/components/inbox/use-row-actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -59,10 +61,12 @@ export function InboxBoard(props: {
   candidates: InboxCandidate[];
   orphans: InboxOrphan[];
   dismissed: DismissedOrphan[];
-  upcoming: { id: string; name: string }[];
+  upcoming: { id: string; name: string; aliases: string[] }[];
 }): JSX.Element {
   const { candidates, orphans, dismissed, upcoming } = props;
   const { pendingIds, submit } = useRowActions();
+  // Tracks what the operator typed, so the duplicate warning follows the edit.
+  const [names, setNames] = useState<Record<string, string>>({});
 
   const total = candidates.length + orphans.length;
 
@@ -120,6 +124,7 @@ export function InboxBoard(props: {
             <div className="space-y-4">
               {candidates.map((candidate, index) => {
                 const busy = pendingIds.has(candidate.id);
+                const typedName = names[candidate.id] ?? candidate.name;
                 return (
                   <Card key={candidate.id} className="gap-5 overflow-hidden p-0">
                     <div className="border-b border-border/70 bg-muted/25 px-5 py-4">
@@ -159,7 +164,13 @@ export function InboxBoard(props: {
                           <Input
                             id={`name-${candidate.id}`}
                             name="name"
-                            defaultValue={candidate.name}
+                            value={typedName}
+                            onChange={(event) =>
+                              setNames((prev) => ({
+                                ...prev,
+                                [candidate.id]: event.target.value,
+                              }))
+                            }
                             placeholder="Ex.: ONIX"
                             required
                             disabled={busy}
@@ -179,6 +190,7 @@ export function InboxBoard(props: {
                           />
                         </div>
                       </div>
+                      <SimilarWarning name={typedName} parties={upcoming} />
                       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
                         <div className="space-y-2">
                           <Label htmlFor={`lot-${candidate.id}`}>Lote</Label>

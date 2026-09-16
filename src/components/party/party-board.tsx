@@ -13,6 +13,7 @@ import {
   History,
   Link2Off,
   ListPlus,
+  Merge,
   MessageSquareText,
   NotebookPen,
   Pencil,
@@ -21,12 +22,16 @@ import {
   Tag,
   Ticket,
   TicketCheck,
+  Trash2,
+  TriangleAlert,
   UserRound,
 } from "lucide-react";
 import {
   actionAddLot,
   actionCloseLot,
+  actionDiscardParty,
   actionEnqueueWatchlist,
+  actionMergeParty,
   actionUnlinkSignal,
   actionUpdateLot,
   actionUpdateParty,
@@ -72,6 +77,14 @@ export type PartyTimelineItem = {
   signals: { id: string; kind: "procura" | "oferta" }[];
 };
 
+/** Candidate survivors for a merge, with the look-alikes flagged. */
+export type PartyMergeTarget = {
+  id: string;
+  name: string;
+  eventAt: string;
+  similar: boolean;
+};
+
 const PLATFORMS = ["sympla", "gandaya", "blacktag", "ingresse", "other", "unknown"] as const;
 
 const PLATFORM_LABEL: Record<(typeof PLATFORMS)[number], string> = {
@@ -108,12 +121,25 @@ export function PartyBoard(props: {
   watchlistEligible: boolean;
   lots: PartyLot[];
   timeline: PartyTimelineItem[];
+  mergeTargets: PartyMergeTarget[];
+  linkedMessages: number;
 }): JSX.Element {
-  const { party, noBuy, upcoming, watchlistEligible, lots, timeline } = props;
+  const {
+    party,
+    noBuy,
+    upcoming,
+    watchlistEligible,
+    lots,
+    timeline,
+    mergeTargets,
+    linkedMessages,
+  } = props;
   const router = useRouter();
   const [, start] = useTransition();
   const [pendingIds, setPendingIds] = useState(() => new Set<string>());
   const [editingLotId, setEditingLotId] = useState<string | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [confirming, setConfirming] = useState<"merge" | "discard" | null>(null);
   const refresh = () => router.refresh();
 
   function submit(
@@ -212,7 +238,13 @@ export function PartyBoard(props: {
   const enqueueBusy = pendingIds.has("enqueue");
   const addLotBusy = pendingIds.has("add-lot");
   const editBusy = pendingIds.has("edit");
+  const mergeBusy = pendingIds.has("merge");
+  const discardBusy = pendingIds.has("discard");
   const openLots = lots.filter((lot) => lot.closedAt == null);
+  const similarTargets = mergeTargets.filter((target) => target.similar);
+  const otherTargets = mergeTargets.filter((target) => !target.similar);
+  const mergeTarget =
+    mergeTargets.find((target) => target.id === mergeTargetId) ?? null;
 
   return (
     <div className="space-y-7">
@@ -618,6 +650,177 @@ export function PartyBoard(props: {
           )}
         </section>
       </div>
+
+      <section className="space-y-4">
+        <SectionHeader
+          title="Catálogo errado"
+          description="Para quando esta festa não deveria existir. As duas ações são definitivas."
+        />
+        <Card className="gap-6 border-destructive/25 p-5">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="grid size-9 place-items-center rounded-xl bg-destructive/10 text-destructive">
+                <Merge className="size-4" />
+              </span>
+              <div>
+                <h3 className="font-semibold">Fundir em outra festa</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Quando esta é a duplicata. Sinais, mensagens e lotes migram, e
+                  o nome daqui vira apelido da festa que fica.
+                </p>
+              </div>
+            </div>
+
+            {mergeTargets.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Não há outra festa no catálogo para receber esta.
+              </p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor="merge-target">Festa que fica</Label>
+                  <select
+                    id="merge-target"
+                    className={selectClassName}
+                    value={mergeTargetId}
+                    disabled={mergeBusy}
+                    aria-busy={mergeBusy || undefined}
+                    onChange={(event) => {
+                      setMergeTargetId(event.target.value);
+                      setConfirming(null);
+                    }}
+                  >
+                    <option value="">Escolha a festa…</option>
+                    {similarTargets.length > 0 ? (
+                      <optgroup label="Parecidas com esta">
+                        {similarTargets.map((target) => (
+                          <option key={target.id} value={target.id}>
+                            {target.name} · {formatWhen(target.eventAt)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {otherTargets.length > 0 ? (
+                      <optgroup label="Demais festas">
+                        {otherTargets.map((target) => (
+                          <option key={target.id} value={target.id}>
+                            {target.name} · {formatWhen(target.eventAt)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={!mergeTarget || mergeBusy}
+                  aria-busy={mergeBusy || undefined}
+                  onClick={() => setConfirming("merge")}
+                >
+                  <Merge /> Fundir
+                </Button>
+              </div>
+            )}
+
+            {confirming === "merge" && mergeTarget ? (
+              <Alert variant="destructive" className="border-destructive/25 bg-destructive/8 py-4">
+                <TriangleAlert />
+                <AlertTitle>Fundir em {mergeTarget.name}?</AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <span>
+                    {party.name} deixa de existir e tudo que está aqui passa
+                    para {mergeTarget.name}.
+                  </span>
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={mergeBusy}
+                      aria-busy={mergeBusy || undefined}
+                      onClick={() => {
+                        const fd = new FormData();
+                        fd.set("partyId", party.id);
+                        fd.set("targetId", mergeTarget.id);
+                        submit("merge", actionMergeParty, fd, TOAST.merged, () =>
+                          router.push(`/parties/${mergeTarget.id}`),
+                        );
+                      }}
+                    >
+                      Confirmar fusão
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(null)}>
+                      Cancelar
+                    </Button>
+                  </span>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+          </div>
+
+          <div className="space-y-4 border-t border-border/65 pt-5">
+            <div className="flex items-center gap-3">
+              <span className="grid size-9 place-items-center rounded-xl bg-destructive/10 text-destructive">
+                <Trash2 className="size-4" />
+              </span>
+              <div>
+                <h3 className="font-semibold">Descartar festa</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Quando ela não é duplicata de nada, só não devia estar no
+                  catálogo. As mensagens voltam para a caixa de entrada.
+                </p>
+              </div>
+            </div>
+
+            {confirming === "discard" ? (
+              <Alert variant="destructive" className="border-destructive/25 bg-destructive/8 py-4">
+                <TriangleAlert />
+                <AlertTitle>Descartar {party.name}?</AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <span>
+                    {linkedMessages === 0
+                      ? "Os lotes e o histórico de calor desta festa vão embora."
+                      : `Os lotes vão embora e ${linkedMessages} ${linkedMessages === 1 ? "mensagem volta" : "mensagens voltam"} para a caixa de entrada.`}
+                  </span>
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={discardBusy}
+                      aria-busy={discardBusy || undefined}
+                      onClick={() => {
+                        const fd = new FormData();
+                        fd.set("partyId", party.id);
+                        submit("discard", actionDiscardParty, fd, TOAST.discarded, () =>
+                          router.push("/inbox"),
+                        );
+                      }}
+                    >
+                      Confirmar descarte
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(null)}>
+                      Cancelar
+                    </Button>
+                  </span>
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Button
+                type="button"
+                variant="destructive"
+                className="md:w-auto"
+                disabled={discardBusy}
+                aria-busy={discardBusy || undefined}
+                onClick={() => setConfirming("discard")}
+              >
+                <Trash2 /> Descartar festa
+              </Button>
+            )}
+          </div>
+        </Card>
+      </section>
     </div>
   );
 }

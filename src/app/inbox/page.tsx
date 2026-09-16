@@ -111,6 +111,7 @@ export default async function InboxPage() {
         upcoming={upcoming.map((party) => ({
           id: party.id,
           name: party.name,
+          aliases: party.aliases,
         }))}
       />
     </main>
