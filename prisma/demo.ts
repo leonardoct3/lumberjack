@@ -212,6 +212,12 @@ async function main(): Promise<void> {
          { id: "demo-n1", group: "demo-g-sp", senderWaId: "demo-s-teo", senderName: "Téo", hours: 1, text: "bom dia galera" },
          { id: "demo-n2", group: "demo-g-rodeio", senderWaId: "demo-s-bruno", senderName: "Bruno", hours: 13, text: "alguem sabe que horas abre?" },
 
+         // Promoter blasts from someone who does not administer the group: the
+         // ad shape alone has to open the candidate.
+         { id: "demo-ad1", group: "demo-g-sp", senderWaId: "demo-s-cassi", senderName: "Cassi Sem Taxa", hours: 4, text: "⚠️ *MEIO ADVOGADO* 🎟️ 25.09 VIRADA DE LOTE HOJE 23h59 SEM TAXA https://wa.me/5511998845595 Aluno R$255 Não aluno R$290" },
+         // Guest list on a host we do not know: one mark, no way to buy.
+         { id: "demo-ad2", group: "demo-g-sp", senderWaId: "demo-s-babi", senderName: "BabiGol - Promoter", hours: 6, text: "*MOTIRÔ* _coloque seu nome na lista VIP_ Quarta - Dia de Feira https://www.pensanoevento.com.br/nomenalista/108274/dia-de-feira" },
+
          // Mentions a ticket but states no side: these land in the drawer.
          { id: "demo-u1", group: "demo-g-sp", senderWaId: "demo-s-gui", senderName: "Guilherme", hours: 2, text: "2 pista jaguariuna aqui" },
          { id: "demo-u2", group: "demo-g-rodeio", senderWaId: "demo-s-marina", senderName: "Marina", hours: 9, text: "alguem sabe se a pista ja esgotou?" },

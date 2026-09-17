@@ -87,6 +87,43 @@ describe("classifyMessage offer vocabulary", () => {
   });
 });
 
+describe("classifyMessage promoter blasts", () => {
+  // Real texts from the board. None of these senders administers the group,
+  // so they used to sit in ruído while the candidate queue stayed empty.
+  it.each([
+    "⚠️ *Araxás* 📅 27/12 a 02/01 ÚLTIMOS INGRESSOS DO LOTE ATUAL *SEM TAXA VIA PIX* https://wa.me/5511998845595 Pacote - Fem R$2.750 | Masc R$3.150",
+    "⚠️ *Meio Advogado* 25.09 VIRADA DE LOTE HOJE 23h59 SEM TAXA https://wa.me/5511998845595 Aluno R$255 Não aluno R$290 https://blacktag.com.br/eventos/32960",
+    "⚠️ *SUPER TENDA* 03:10 🔗 https://bit.ly/FestasLiga PIX (sem taxa) Pista R$125 Front R$205 Super VIP R$255",
+    "⚠️ 27/12 a 02/01 AVULSOS VENDAS ABERTAS (somente pelo link) *COM DESCONTO* https://cart.ingresse.com/f95a273a/tickets?coupon=CG",
+  ])("reads an ad as a candidate: %s", (text) => {
+    expect(pista(text)).toBe("admin_promo");
+  });
+
+  it("leaves a guest list on an unknown host undecided", () => {
+    expect(
+      pista(
+        "*Motirô* _coloque seu nome na lista VIP_ Quarta - Dia de Feira https://www.pensanoevento.com.br/nomenalista/108274",
+      ),
+    ).toBe("ruido");
+  });
+
+  it("keeps a pista offer that carries a sales link and a price", () => {
+    expect(
+      pista("vendo 1 pista onix R$150 https://www.sympla.com.br/evento/onix"),
+    ).toBe("pista_oferta");
+  });
+
+  it("keeps a buyer who quotes the official price", () => {
+    expect(pista("compro 2 pista, pago os R$180 do lote https://wa.me/551199")).toBe(
+      "pista_procura",
+    );
+  });
+
+  it("does not turn one lonely link into a candidate", () => {
+    expect(pista("olha o link https://www.sympla.com.br/x")).toBe("ruido");
+  });
+});
+
 describe("classifyMessage restraint", () => {
   // Weak words only count next to a ticket noun, or the Inbox fills with chat.
   it.each([

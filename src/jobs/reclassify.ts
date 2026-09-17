@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import type { MessageClass, PrismaClient, SignalType } from "@prisma/client";
 import { prisma } from "@/db/client";
 import { classifyMessage } from "@/domain/classify";
+import { extractCandidate } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
 import { refreshHeat } from "@/jobs/refresh-heat";
 
@@ -11,6 +12,8 @@ export type ReclassifyReport = {
   changed: number;
   /** Was ruído, now reads as a pista message: the demand the operator never saw. */
   becamePista: number;
+  /** Was ruído, now reads as an announced festa: a promoter who is not an admin. */
+  becamePromo: number;
   /** Was pista, now reads as ruído: a keyword that used to be too greedy. */
   lostPista: number;
   /** Offer and demand swapped places. */
@@ -19,6 +22,9 @@ export type ReclassifyReport = {
   signalsRetyped: number;
   /** Signals on messages that are no longer pista; left alone on purpose. */
   signalsToReview: number;
+  candidatesCreated: number;
+  /** Candidates whose message stopped being a promo; left alone on purpose. */
+  candidatesToReview: number;
 };
 
 type Plan = {
@@ -31,6 +37,7 @@ type Plan = {
     type: SignalType;
   }[];
   signalsToRetype: { id: string; type: SignalType }[];
+  candidatesToCreate: { messageId: string; text: string; sentAt: Date }[];
 };
 
 const PISTA: MessageClass[] = ["pista_oferta", "pista_procura"];
@@ -71,8 +78,10 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
         senderId: true,
         partyId: true,
         duplicateOfId: true,
+        sentAt: true,
         sender: { select: { role: true } },
         signals: { select: { id: true, type: true } },
+        candidate: { select: { id: true } },
       },
     }),
     db.party.findMany({ where: { status: "upcoming" } }),
@@ -90,15 +99,19 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
       messages: messages.length,
       changed: 0,
       becamePista: 0,
+      becamePromo: 0,
       lostPista: 0,
       flipped: 0,
       signalsCreated: 0,
       signalsRetyped: 0,
       signalsToReview: 0,
+      candidatesCreated: 0,
+      candidatesToReview: 0,
     },
     classes: [],
     signalsToCreate: [],
     signalsToRetype: [],
+    candidatesToCreate: [],
   };
 
   for (const message of messages) {
@@ -115,12 +128,30 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
       if (isPista(next) && !isPista(message.class)) plan.report.becamePista += 1;
       if (!isPista(next) && isPista(message.class)) plan.report.lostPista += 1;
       if (isPista(next) && isPista(message.class)) plan.report.flipped += 1;
+      if (next === "admin_promo") plan.report.becamePromo += 1;
+    }
+
+    if (next === "admin_promo") {
+      if (signal) plan.report.signalsToReview += 1;
+      // A copy has no candidate of its own; the canonical message carries it.
+      if (!message.candidate && !message.duplicateOfId) {
+        plan.candidatesToCreate.push({
+          messageId: message.id,
+          text: message.text,
+          sentAt: message.sentAt,
+        });
+        plan.report.candidatesCreated += 1;
+      }
+      continue;
     }
 
     if (!isPista(next)) {
       if (signal) plan.report.signalsToReview += 1;
+      if (message.candidate) plan.report.candidatesToReview += 1;
       continue;
     }
+
+    if (message.candidate) plan.report.candidatesToReview += 1;
 
     if (signal) {
       if (signal.type !== signalType(next)) {
@@ -169,6 +200,22 @@ async function applyPlan(db: PrismaClient, plan: Plan): Promise<void> {
     await db.message.update({
       where: { id: signal.messageId },
       data: { partyId: signal.partyId },
+    });
+  }
+
+  for (const candidate of plan.candidatesToCreate) {
+    const extracted = extractCandidate(candidate.text, candidate.sentAt);
+    await db.partyCandidate.create({
+      data: {
+        status: "pending",
+        name: extracted.name,
+        url: extracted.url,
+        lotLabel: extracted.lotLabel,
+        officialPrice: extracted.officialPrice,
+        eventAt: extracted.eventAt,
+        platform: extracted.platform,
+        sourceMessageId: candidate.messageId,
+      },
     });
   }
 }

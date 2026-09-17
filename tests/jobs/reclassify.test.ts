@@ -27,7 +27,7 @@ async function addMessage(
   ids: { group: { id: string }; sender: { id: string } },
   waMessageId: string,
   text: string,
-  cls: "ruido" | "pista_oferta" | "pista_procura" | null,
+  cls: "ruido" | "pista_oferta" | "pista_procura" | "admin_promo" | null,
 ) {
   return prisma.message.create({
     data: {
@@ -164,6 +164,59 @@ describe("reclassifyMessages", () => {
     });
     expect(stored.class).toBe("pista_procura");
     expect(stored.partyId).toBeNull();
+  });
+
+  it("opens a candidate for a promoter who is not a group admin", async () => {
+    const ids = await seedBoard();
+    await addMessage(
+      ids,
+      "a",
+      "*ONIX FESTIVAL* 1º LOTE SEM TAXA R$180 https://www.sympla.com.br/evento/onix",
+      "ruido",
+    );
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.becamePromo).toBe(1);
+    expect(report.candidatesCreated).toBe(1);
+
+    const candidate = await prisma.partyCandidate.findFirstOrThrow();
+    expect(candidate.status).toBe("pending");
+    expect(candidate.officialPrice).toBe(180);
+    expect(candidate.url).toBe("https://www.sympla.com.br/evento/onix");
+  });
+
+  it("never gives a cross-posted ad its own candidate", async () => {
+    const ids = await seedBoard();
+    const text =
+      "*ONIX FESTIVAL* 1º LOTE SEM TAXA R$180 https://www.sympla.com.br/evento/onix";
+    const canonical = await addMessage(ids, "a", text, "ruido");
+    const copy = await addMessage(ids, "b", text, "ruido");
+    await prisma.message.update({
+      where: { id: copy.id },
+      data: { duplicateOfId: canonical.id },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.becamePromo).toBe(2);
+    expect(report.candidatesCreated).toBe(1);
+    expect(await prisma.partyCandidate.count()).toBe(1);
+  });
+
+  it("does not resurrect a candidate the operator rejected", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(
+      ids,
+      "a",
+      "*ONIX FESTIVAL* 1º LOTE SEM TAXA R$180 https://www.sympla.com.br/evento/onix",
+      "admin_promo",
+    );
+    await prisma.partyCandidate.create({
+      data: { status: "rejected", name: "ONIX", sourceMessageId: message.id },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.candidatesCreated).toBe(0);
+    expect(await prisma.partyCandidate.count()).toBe(1);
   });
 
   it("is idempotent", async () => {
