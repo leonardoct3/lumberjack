@@ -49,6 +49,9 @@ export const TICKET_NOUNS = [
 
 const TICKET_NOUN = new RegExp(`\\b(${TICKET_NOUNS.join("|")})s?\\b`);
 
+/** Longest a person writes when trading a ticket; ads run several times this. */
+const PERSONAL_LENGTH = 140;
+
 /** "preciso de 2 pra hoje" names no ticket, but the count says what it is about. */
 const SMALL_COUNT = /\b[1-6]\b/;
 
@@ -175,5 +178,14 @@ export function classifyMessage(input: {
   }
 
   // Someone trading their own ticket comes first, link or no link.
-  return strongPista(n) ?? (isAd(n) ? "admin_promo" : weakPista(n) ?? "ruido");
+  const strong = strongPista(n);
+  if (strong) return strong;
+
+  // "tenho 1 pista do 2º lote <link>" has an ad's marks and none of its bulk.
+  // Length is what tells them apart: a person writes a line, an ad writes a
+  // page. Without this, widening ads would eat the signals we just recovered.
+  const weak = weakPista(n);
+  if (weak && n.length <= PERSONAL_LENGTH) return weak;
+
+  return isAd(n) ? "admin_promo" : weak ?? "ruido";
 }

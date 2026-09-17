@@ -119,6 +119,20 @@ describe("classifyMessage promoter blasts", () => {
     );
   });
 
+  it("keeps a short offer that only has weak markers and an ad's marks", () => {
+    expect(
+      pista("tenho 1 pista do 2º lote R$180 https://www.sympla.com.br/onix"),
+    ).toBe("pista_oferta");
+  });
+
+  it("still reads a long blast as an ad when it borrows a weak marker", () => {
+    expect(
+      pista(
+        "⚠️ *ONIX FESTIVAL* 🎟️ 31.12 ÚLTIMAS VAGAS DO 2º LOTE, tenho pista e camarote disponível SEM TAXA VIA PIX https://wa.me/5511998845595 Pista R$180 | Camarote R$350 | Open Bar incluso",
+      ),
+    ).toBe("admin_promo");
+  });
+
   it("does not turn one lonely link into a candidate", () => {
     expect(pista("olha o link https://www.sympla.com.br/x")).toBe("ruido");
   });
