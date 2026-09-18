@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { CONFIDENCE_LABEL, TREND_LABEL, readHeat } from "@/lib/heat-copy";
-import type { Confidence, Trend } from "@/domain/heat";
+import { TREND_LABEL, VERDICT_LABEL, readHeat } from "@/lib/heat-copy";
+import type { HeatVerdict, Trend } from "@/domain/heat";
 
 describe("readHeat", () => {
   it("says who wants in, who is letting go, and how long there is", () => {
@@ -28,10 +28,10 @@ describe("readHeat", () => {
 });
 
 describe("heat labels", () => {
-  it("covers every confidence and trend", () => {
-    const confidences: Confidence[] = ["none", "low", "medium", "high"];
+  it("covers every verdict and trend", () => {
+    const verdicts: HeatVerdict[] = ["scarce", "balanced", "flooded", "unknown"];
     const trends: Trend[] = ["up", "flat", "down"];
-    for (const key of confidences) expect(CONFIDENCE_LABEL[key]).toBeTruthy();
+    for (const key of verdicts) expect(VERDICT_LABEL[key]).toBeTruthy();
     for (const key of trends) expect(TREND_LABEL[key]).toBeTruthy();
   });
 });

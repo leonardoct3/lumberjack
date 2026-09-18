@@ -7,6 +7,7 @@ import {
   Flame,
   Minus,
   Radio,
+  Snowflake,
   TrendingDown,
   TrendingUp,
   Users,
@@ -24,9 +25,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Confidence, Trend } from "@/domain/heat";
+import type { HeatVerdict, Trend } from "@/domain/heat";
 import { formatWhen } from "@/lib/datetime";
-import { CONFIDENCE_LABEL, TREND_LABEL, readHeat } from "@/lib/heat-copy";
+import { TREND_LABEL, VERDICT_LABEL, readHeat } from "@/lib/heat-copy";
 import { cn } from "@/lib/utils";
 
 export type HeatRow = {
@@ -37,7 +38,7 @@ export type HeatRow = {
   buyers: number | null;
   sellers: number | null;
   messages: number | null;
-  confidence: Confidence;
+  verdict: HeatVerdict;
   trend: Trend | null;
   days: number | null;
 };
@@ -65,16 +66,19 @@ const TREND_ICON = {
 
 function Pressure({
   pressure,
-  confidence,
+  verdict,
   trend,
 }: {
   pressure: number | null;
-  confidence: Confidence;
+  verdict: HeatVerdict;
   trend: Trend | null;
 }) {
-  // Thin evidence is shown by dimming the number instead of by weighting it
-  // into the number, which is what made the old score impossible to read.
-  const believable = confidence === "medium" || confidence === "high";
+  // Colour says buy, not "believe this number". It used to say the second, and
+  // the loudest row on the board was the one with forty-two sellers.
+  const buy = verdict === "scarce";
+  // A room full of sellers and an empty room both go quiet, so the icon is what
+  // tells them apart: the market answered, versus nobody spoke.
+  const Mark = verdict === "flooded" ? Snowflake : Flame;
   const TrendIcon = trend ? TREND_ICON[trend] : null;
 
   return (
@@ -84,22 +88,20 @@ function Pressure({
       <span
         className={cn(
           "flex h-5 items-center gap-1.5 font-mono text-sm tabular-nums",
-          pressure == null || !believable
-            ? "text-muted-foreground"
-            : "font-semibold text-primary",
+          buy ? "font-semibold text-primary" : "text-muted-foreground",
         )}
         title={
           pressure == null
             ? undefined
-            : `${CONFIDENCE_LABEL[confidence]}${trend ? `, ${TREND_LABEL[trend]}` : ""}`
+            : `${VERDICT_LABEL[verdict]}${trend ? `, ${TREND_LABEL[trend]}` : ""}`
         }
       >
         {pressure == null ? (
           "—"
         ) : (
           <>
-            <Flame
-              className={cn("size-3.5", believable && "fill-primary/20")}
+            <Mark
+              className={cn("size-3.5", buy && "fill-primary/20")}
               aria-hidden="true"
             />
             {pressureLabel(pressure)}
@@ -107,9 +109,7 @@ function Pressure({
               <TrendIcon
                 className={cn(
                   "size-3",
-                  trend === "up" && "text-primary",
-                  trend === "down" && "text-muted-foreground",
-                  trend === "flat" && "text-muted-foreground/60",
+                  trend === "up" && buy ? "text-primary" : "text-muted-foreground/60",
                 )}
                 aria-hidden="true"
               />
@@ -129,7 +129,7 @@ function Pressure({
           <span
             className={cn(
               "block h-full rounded-full",
-              believable ? "bg-primary" : "bg-muted-foreground/50",
+              buy ? "bg-primary" : "bg-muted-foreground/50",
             )}
             style={{
               width: `${Math.min(100, Math.max(8, (pressure / FULL_BAR) * 100))}%`,
@@ -175,10 +175,10 @@ export function HeatBoard(props: {
 }): JSX.Element {
   const { janela, grupo, groups, rows, updatedAt } = props;
   const buyers = rows.reduce((sum, row) => sum + (row.buyers ?? 0), 0);
-  const underPressure = rows.filter(
-    (row) => (row.pressure ?? 0) >= 2 && row.confidence !== "low" && row.confidence !== "none",
-  ).length;
-  const hottest = rows.find((row) => row.pressure != null) ?? null;
+  const underPressure = rows.filter((row) => row.verdict === "scarce").length;
+  // The top row is only the highest ratio; calling it the hottest when the
+  // verdict says "pouca gente" is how the board started lying to the operator.
+  const hottest = rows.find((row) => row.verdict === "scarce") ?? null;
 
   return (
     <div className="space-y-7">
@@ -329,7 +329,7 @@ export function HeatBoard(props: {
                       <TableCell>
                         <Pressure
                           pressure={row.pressure}
-                          confidence={row.confidence}
+                          verdict={row.verdict}
                           trend={row.trend}
                         />
                       </TableCell>
@@ -376,7 +376,7 @@ export function HeatBoard(props: {
                       </div>
                       <Pressure
                         pressure={row.pressure}
-                        confidence={row.confidence}
+                        verdict={row.verdict}
                         trend={row.trend}
                       />
                     </div>

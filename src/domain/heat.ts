@@ -17,17 +17,29 @@ export function computePressure(counts: HeatCounts): number {
 }
 
 /**
- * How much the ratio is worth believing. Pressure of 3 from three people and
- * from thirty is the same number and a very different bet, and hiding that
- * inside a weight is what made the old score unreadable.
+ * What the row is telling the operator to do, which is what the board gets to
+ * colour. Pressure alone cannot: 1× from "1 procurando, 0 vendendo" is silence,
+ * not scarcity, and the ratio reads the same either way.
  */
-export type Confidence = "none" | "low" | "medium" | "high";
+export type HeatVerdict = "scarce" | "balanced" | "flooded" | "unknown";
 
-export function demandConfidence(uniqueDemandSenders: number): Confidence {
-  if (uniqueDemandSenders <= 0) return "none";
-  if (uniqueDemandSenders <= 2) return "low";
-  if (uniqueDemandSenders <= 5) return "medium";
-  return "high";
+/** Below three people it is one person's mood, not a market. */
+const PEOPLE = 3;
+/** A buyer and a half per seller: under that, 1× keeps coming from silence. */
+const SCARCE = 1.5;
+const FLOODED = 0.75;
+
+export function heatVerdict(input: {
+  pressure: number;
+  buyers: number;
+  sellers: number;
+}): HeatVerdict {
+  if (input.buyers >= PEOPLE && input.pressure >= SCARCE) return "scarce";
+  // Read off the sellers, because that is whose evidence this is: nobody
+  // asking with nobody selling is an empty room, not a glut.
+  if (input.sellers >= PEOPLE && input.pressure < FLOODED) return "flooded";
+  if (input.buyers >= PEOPLE || input.sellers >= PEOPLE) return "balanced";
+  return "unknown";
 }
 
 export type Trend = "up" | "flat" | "down";

@@ -7,7 +7,7 @@ import { prisma } from "@/db/client";
 import { canRankOnHeat } from "@/domain/gates";
 import {
   computePressure,
-  demandConfidence,
+  heatVerdict,
   pressureTrend,
   snapshotNearest,
 } from "@/domain/heat";
@@ -98,7 +98,7 @@ export default async function HeatPage({
           buyers: null,
           sellers: null,
           messages: null,
-          confidence: "none" as const,
+          verdict: "unknown" as const,
           trend: null,
           days: null,
           computedAt: null,
@@ -135,7 +135,7 @@ export default async function HeatPage({
         sellers,
         messages:
           janela === 1 ? snap.demand1d : janela === 3 ? snap.demand3d : snap.demand7d,
-        confidence: demandConfidence(buyers),
+        verdict: heatVerdict({ pressure, buyers, sellers }),
         trend: pressureTrend(pressure, previous),
         days: snap.daysToEvent,
         computedAt: snap.computedAt,

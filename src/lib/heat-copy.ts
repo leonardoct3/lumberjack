@@ -1,4 +1,4 @@
-import type { Confidence, Trend } from "@/domain/heat";
+import type { HeatVerdict, Trend } from "@/domain/heat";
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -31,11 +31,11 @@ export function readHeat(input: {
   return parts.join(", ");
 }
 
-export const CONFIDENCE_LABEL: Record<Confidence, string> = {
-  none: "sem procura",
-  low: "pouca gente",
-  medium: "gente suficiente",
-  high: "muita gente",
+export const VERDICT_LABEL: Record<HeatVerdict, string> = {
+  scarce: "escassez: mais procura que oferta",
+  balanced: "equilíbrio entre procura e oferta",
+  flooded: "oferta sobrando",
+  unknown: "pouca gente para concluir",
 };
 
 export const TREND_LABEL: Record<Trend, string> = {

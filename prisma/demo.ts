@@ -192,6 +192,12 @@ async function main(): Promise<void> {
     { id: "demo-d7", group: "demo-g-sp", senderWaId: "demo-s-camila", senderName: "Camila", hours: 4, text: "procuro pista sunset" },
     { id: "demo-d8", group: "demo-g-sp", senderWaId: "demo-s-bruno", senderName: "Bruno", hours: 26, text: "alguem com sunset?" },
 
+    // Tomorrowland: four different people letting go, nobody asking. The board
+    // has to tell this apart from a festa nobody has mentioned at all.
+    { id: "demo-o5", group: "demo-g-sp", senderWaId: "demo-s-marina", senderName: "Marina", hours: 5, text: "vendo 1 pista tomorrowland brasil" },
+    { id: "demo-o6", group: "demo-g-sp", senderWaId: "demo-s-rafa", senderName: "Rafa", hours: 13, text: "repasso 2 tomorrowland brasil pelo custo" },
+    { id: "demo-o7", group: "demo-g-rodeio", senderWaId: "demo-s-camila", senderName: "Camila", hours: 21, text: "sobrou 1 tomorrowland brasil, aceito troca" },
+
     // Same offer blasted to three groups: one orphan card, badge reads 3.
     { id: "demo-x1", group: "demo-g-sp", senderWaId: "demo-s-gui", senderName: "Guilherme", hours: 3, text: "Vendo 2 pista Tomorrowland Brasil 11/10 transferível" },
     { id: "demo-x2", group: "demo-g-rodeio", senderWaId: "demo-s-gui", senderName: "Guilherme", hours: 3, text: "🎟️ vendo 2 pista tomorrowland brasil 11/10 transferivel 🔥" },

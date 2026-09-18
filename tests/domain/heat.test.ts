@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computePressure,
-  demandConfidence,
+  heatVerdict,
   pressureTrend,
   snapshotNearest,
 } from "@/domain/heat";
@@ -53,17 +53,39 @@ describe("computePressure", () => {
   });
 });
 
-describe("demandConfidence", () => {
-  it.each([
-    [0, "none"],
-    [1, "low"],
-    [2, "low"],
-    [3, "medium"],
-    [5, "medium"],
-    [6, "high"],
-    [40, "high"],
-  ] as const)("reads %i people as %s", (people, expected) => {
-    expect(demandConfidence(people)).toBe(expected);
+describe("heatVerdict", () => {
+  function verdict(buyers: number, sellers: number) {
+    return heatVerdict({
+      buyers,
+      sellers,
+      pressure: computePressure({
+        uniqueDemandSenders: buyers,
+        uniqueOfferSenders: sellers,
+      }),
+    });
+  }
+
+  it("calls one person asking into an empty room silence, not scarcity", () => {
+    // 1 ÷ (0 + 1) is 1×, which used to read as the best row on the board.
+    expect(verdict(1, 0)).toBe("unknown");
+    expect(verdict(2, 1)).toBe("unknown");
+  });
+
+  it("only calls it scarcity with people behind it", () => {
+    expect(verdict(6, 1)).toBe("scarce");
+    expect(verdict(3, 1)).toBe("scarce");
+    // Three buyers, two sellers is 1× — people enough, pressure not.
+    expect(verdict(3, 2)).toBe("balanced");
+  });
+
+  it("separates a room full of sellers from an empty room", () => {
+    expect(verdict(17, 42)).toBe("flooded");
+    expect(verdict(1, 4)).toBe("flooded");
+    expect(verdict(0, 0)).toBe("unknown");
+  });
+
+  it("does not call two sellers a glut", () => {
+    expect(verdict(0, 2)).toBe("unknown");
   });
 });
 
