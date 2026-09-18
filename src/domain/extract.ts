@@ -43,30 +43,98 @@ function platformFromUrl(url: string): Platform {
 }
 
 /** Promoters bold their sales pitch too, and it is never a festa's name. */
-const BOLD_NOISE = [
+const PITCH = [
   "cupom",
   "desconto",
   "sem taxa",
+  "taxa",
   "pix",
   "cartao",
   "link",
-  "lote",
-  "ingresso",
-  "vendas",
-  "lista",
-  "atencao",
-  "promo",
-  "ultimos",
+  "compra",
+  "venda",
   "garanta",
+  "lote",
+  "virada",
+  "ingresso",
+  "ultimo",
+  "ultima",
+  "lista",
+  "vip",
+  "grupo",
+  "fique por dentro",
+  "melhores eventos",
+  "abaixo",
+  "valores",
+  "descricao",
+  "disponibilidade",
+  "confirmar",
+  "limitado",
+  "gratis",
+  "open bar",
+  "pacote",
+  "meia entrada",
+  "promo",
+  "atencao",
+  "aviso",
   "vaga",
   "aberta",
+  "esgotado",
+  "segunda",
+  "terca",
+  "quarta",
+  "quinta",
+  "sexta",
+  "sabado",
+  "domingo",
+  "hoje",
+  "amanha",
 ];
 
-function isNameLike(segment: string): boolean {
-  const n = normalizeText(segment).replace(/[*_~:]/g, "").trim();
-  // Dates, times and prices are digits with at most an "R$" hanging off them.
-  if (n.replace(/[^a-z]/g, "").length < 3) return false;
-  return !BOLD_NOISE.some((noise) => n.includes(noise));
+/** Words that carry no meaning on their own, so they cannot make a name. */
+const STOP = new Set([
+  "de", "do", "da", "dos", "das", "e", "o", "a", "os", "as", "em", "no", "na",
+  "nos", "nas", "para", "pra", "por", "com", "via", "sem", "ate", "mais",
+  "aqui", "ja",
+]);
+
+function hasPitch(text: string): boolean {
+  const n = normalizeText(text);
+  return PITCH.some((pitch) => n.includes(pitch));
+}
+
+/**
+ * Is there a name left once the pitch, the filler and the numbers are gone?
+ * Only used to judge a segment — what gets stored is the operator's original
+ * text, pitch words included, because "Sexta Sunset" is a real name.
+ */
+function meaningful(segment: string): boolean {
+  let n = normalizeText(segment);
+  for (const pitch of PITCH) n = n.replaceAll(pitch, " ");
+  const words = n.split(/[^a-z]+/).filter((w) => w.length > 0 && !STOP.has(w));
+  return words.join("").length >= 3;
+}
+
+const SEPARATOR = /\s+[-–—|•>]+\s+/;
+
+/**
+ * Ads glue the pitch onto the name inside one bold segment: "MACK BIXOS -
+ * VIRADA DE LOTE 23:59" is a festa, not noise. Cutting at the separator keeps
+ * the head, and only when the tail is the pitch — "CENTRAL 1926 - VOLT MIX"
+ * has no reason to lose half its name.
+ */
+function cleanName(segment: string): string | null {
+  const trimmed = segment
+    .replace(/^[^\p{L}\p{N}]+/u, "")
+    .replace(/[\s:;,.|•-]+$/u, "")
+    .trim();
+
+  const [head = "", ...rest] = trimmed.split(SEPARATOR);
+  const tail = rest.join(" ");
+  const name =
+    tail.length > 0 && hasPitch(tail) && meaningful(head) ? head.trim() : trimmed;
+
+  return meaningful(name) ? name.slice(0, 80) : null;
 }
 
 /**
@@ -76,8 +144,8 @@ function isNameLike(segment: string): boolean {
  */
 function extractName(text: string): string | null {
   for (const match of text.matchAll(/\*([^*\n]{2,60})\*/g)) {
-    const segment = match[1].trim();
-    if (isNameLike(segment)) return segment.slice(0, 80);
+    const name = cleanName(match[1]);
+    if (name) return name;
   }
 
   // Every bold part was a pitch, so drop them: what is left reads better.

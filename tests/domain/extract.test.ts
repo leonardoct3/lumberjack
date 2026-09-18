@@ -38,6 +38,27 @@ describe("extractCandidate", () => {
     expect(r.eventAt?.toISOString().startsWith("2026-12-31")).toBe(true);
   });
 
+  it("keeps the festa when the pitch is glued onto its name", () => {
+    const r = extractCandidate(
+      "*MACK BIXOS - VIRADA DE LOTE 23:59* Essa sexta, Paradoxo. *Link para compra:* https://blacktag.com.br/eventos/32638/mackbixos-mare *Sem taxa via pix:* https://wa.me/message/X4C *Fique por dentro dos melhores eventos no grupo abaixo:* https://chat.whatsapp.com/GD8",
+      now,
+    );
+    expect(r.name).toBe("MACK BIXOS");
+  });
+
+  it("does not cut a name in half when the tail is not a pitch", () => {
+    const r = extractCandidate("*CENTRAL 1926 - VOLT MIX* sexta 18.09", now);
+    expect(r.name).toBe("CENTRAL 1926 - VOLT MIX");
+  });
+
+  it("skips a bold weekday and a bold free entry", () => {
+    const r = extractCandidate(
+      "🍸 *QUINTA - 17.09* 🎉 *GRÁTIS* até 22h *Galleria Bar* listas",
+      now,
+    );
+    expect(r.name).toBe("Galleria Bar");
+  });
+
   it("skips bold sales pitch and keeps looking for the name", () => {
     const r = extractCandidate(
       "🔗 *Cupom desconto:* CODELIS\n🌊 *RÉVEILLON AREIA BÚZIOS* 🌊 27.12 a 02.01",
