@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { verifyOperatorSession } from "@/auth/session";
 import { prisma } from "@/db/client";
+import { formId } from "@/lib/form";
 
 export async function setGroupListen(id: string, listen: boolean): Promise<void> {
+  await verifyOperatorSession();
   await prisma.group.update({
     where: { id },
     data: { listen },
@@ -11,9 +14,8 @@ export async function setGroupListen(id: string, listen: boolean): Promise<void>
 }
 
 export async function actionSetGroupListen(formData: FormData) {
-  const id = String(formData.get("id") ?? "");
+  const id = formId(formData, "id");
   const listen = String(formData.get("listen") ?? "") === "1";
-  if (!id) return;
   await setGroupListen(id, listen);
   revalidatePath("/setup");
 }
@@ -24,9 +26,9 @@ export async function actionSetGroupListen(formData: FormData) {
  * already in the queue, and nothing already linked is taken away.
  */
 export async function actionSetSenderMuted(formData: FormData) {
-  const id = String(formData.get("id") ?? "");
+  await verifyOperatorSession();
+  const id = formId(formData, "id");
   const muted = String(formData.get("muted") ?? "") === "1";
-  if (!id) return;
   await prisma.sender.update({ where: { id }, data: { muted } });
   revalidatePath("/setup");
   revalidatePath("/inbox");

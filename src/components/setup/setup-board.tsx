@@ -2,7 +2,7 @@
 
 import type { JSX } from "react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo } from "react";
 import {
   CircleAlert,
   Headphones,
@@ -17,12 +17,14 @@ import {
 import { actionLogout } from "@/app/actions/auth";
 import { actionSetGroupListen, actionSetSenderMuted } from "@/app/actions/setup";
 import { GroupPicker } from "@/components/setup/group-picker";
+import { useRowActions } from "@/components/inbox/use-row-actions";
 import { SenderList, type SetupSender } from "@/components/setup/sender-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
+import { StatGrid } from "@/components/ui/stat-grid";
 import type { SessionGuidance } from "@/components/ui/session-banner";
 import {
   Table,
@@ -33,9 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { duplicateNames, shortWaId } from "@/lib/group-search";
-import { runAction } from "@/lib/run-action";
 import { TOAST } from "@/lib/toast-copy";
-
 
 export function SetupBoard(props: {
   connected: boolean;
@@ -62,9 +62,7 @@ export function SetupBoard(props: {
     [listening, available],
   );
   const router = useRouter();
-  const [, start] = useTransition();
-  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
-  const refresh = () => router.refresh();
+  const { pendingIds, submit } = useRowActions();
 
   // Baileys rotates the QR about every 20s; keep the board in sync while pairing.
   useEffect(() => {
@@ -74,24 +72,6 @@ export function SetupBoard(props: {
     }, 5_000);
     return () => window.clearInterval(id);
   }, [qrDataUrl, router]);
-
-  function submit(
-    id: string,
-    action: (fd: FormData) => Promise<void>,
-    fd: FormData,
-    success: string,
-  ) {
-    setPendingIds((prev) => new Set(prev).add(id));
-    start(() => {
-      void runAction(action, fd, success, refresh).finally(() =>
-        setPendingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        }),
-      );
-    });
-  }
 
   const totalGroups = listening.length + available.length;
   // "Classificados" counted a role nobody needed to declare; what matters is
@@ -111,8 +91,7 @@ export function SetupBoard(props: {
         ? CircleAlert
         : Settings2;
   const showSetupGuidance =
-    banner?.visibility === "setup" &&
-    (banner.kind !== "qr" || qrDataUrl == null);
+    banner?.visibility === "setup" && (banner.kind !== "qr" || qrDataUrl == null);
 
   return (
     <div className="space-y-7">
@@ -155,24 +134,19 @@ export function SetupBoard(props: {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-3 overflow-hidden rounded-[var(--radius)] border border-border/80 bg-card">
-        <div className="p-4 md:p-5">
-          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Grupos</p>
-          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(totalGroups).padStart(2, "0")}</p>
-        </div>
-        <div className="border-x border-border/80 p-4 md:p-5">
-          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Ouvindo</p>
-          <p className="mt-2 font-mono text-xl font-semibold text-primary tabular-nums md:text-2xl">{String(listening.length).padStart(2, "0")}</p>
-        </div>
-        <div className="p-4 md:p-5">
-          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Remetentes ativos</p>
-          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(active).padStart(2, "0")}</p>
-        </div>
-      </div>
+      <StatGrid
+        stats={[
+          { label: "Grupos", value: String(totalGroups).padStart(2, "0") },
+          { label: "Ouvindo", value: String(listening.length).padStart(2, "0") },
+          { label: "Remetentes ativos", value: String(active).padStart(2, "0") },
+        ]}
+      />
 
       {qrDataUrl ? (
         <Card className="flex flex-col items-center gap-5 p-6 md:flex-row md:items-start md:gap-8">
           <div className="rounded-xl border border-border bg-white p-3">
+            {/* The QR is a short-lived data URL; Next image optimization cannot improve it. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={qrDataUrl}
               alt="QR Code do WhatsApp para emparelhar o monitor"
@@ -192,8 +166,8 @@ export function SetupBoard(props: {
               Escaneie o código no celular
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
-              No WhatsApp: Aparelhos conectados → Conectar aparelho. O código
-              renova sozinho a cada poucos segundos.
+              No WhatsApp: Aparelhos conectados → Conectar aparelho. O código renova
+              sozinho a cada poucos segundos.
             </p>
           </div>
         </Card>
@@ -264,7 +238,10 @@ export function SetupBoard(props: {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline" className="border-primary/20 bg-primary/8 text-primary">
+                              <Badge
+                                variant="outline"
+                                className="border-primary/20 bg-primary/8 text-primary"
+                              >
                                 <span className="size-1.5 rounded-full bg-primary" />
                                 Ouvindo
                               </Badge>
@@ -351,7 +328,8 @@ export function SetupBoard(props: {
 
       <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/25 px-4 py-3 text-xs leading-5 text-muted-foreground">
         <Radio className="mt-0.5 size-3.5 shrink-0 text-primary" />
-        Alterações são aplicadas ao monitor em tempo real e não interrompem a sessão atual.
+        Alterações são aplicadas ao monitor em tempo real e não interrompem a sessão
+        atual.
       </div>
     </div>
   );

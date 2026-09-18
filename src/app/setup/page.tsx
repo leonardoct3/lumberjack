@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { authDisabled } from "@/auth/cookie";
+import { verifyOperatorSession } from "@/auth/session";
 import { SetupBoard } from "@/components/setup/setup-board";
 import { sessionBanner } from "@/components/ui/session-banner";
-import { readWaStatus } from "@/connector/status";
 import { prisma } from "@/db/client";
 import { senderShape } from "@/domain/sender-shape";
 import { formatWhen } from "@/lib/datetime";
+import { currentWaStatus } from "@/lib/current-wa-status";
+import { now } from "@/lib/clock";
 import { toDataURL } from "qrcode";
 
 export const metadata: Metadata = { title: "Central de conexão" };
@@ -14,9 +16,11 @@ export const metadata: Metadata = { title: "Central de conexão" };
 export const SENDER_WINDOW_DAYS = 30;
 
 export default async function SetupPage() {
-  const status = await readWaStatus(prisma);
-  const banner = sessionBanner(status, Date.now());
-  const since = new Date(Date.now() - SENDER_WINDOW_DAYS * 864e5);
+  await verifyOperatorSession();
+  const status = await currentWaStatus();
+  const currentTime = now();
+  const banner = sessionBanner(status, currentTime);
+  const since = new Date(currentTime - SENDER_WINDOW_DAYS * 864e5);
 
   const [listening, available, senders, byClass, signals, candidates, qrDataUrl] =
     await Promise.all([

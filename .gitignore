@@ -5,3 +5,7 @@ data/
 prisma/dev.db
 *.log
 .railway/
+.dual-graph/
+.dual-graph-context/
+playwright-report/
+test-results/

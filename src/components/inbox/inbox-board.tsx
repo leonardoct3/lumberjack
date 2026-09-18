@@ -7,15 +7,11 @@ import {
   Inbox as InboxIcon,
   Layers,
   Link2,
-  Megaphone,
   MessageSquareText,
   Sparkles,
   Trash2,
 } from "lucide-react";
-import {
-  actionConfirmCandidate,
-  actionRejectCandidate,
-} from "@/app/actions/catalog";
+import { actionConfirmCandidate, actionRejectCandidate } from "@/app/actions/catalog";
 import {
   OrphanList,
   type DismissedOrphan,
@@ -34,6 +30,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
+import { ReachBadge } from "@/components/ui/reach-badge";
+import { StatGrid } from "@/components/ui/stat-grid";
 import { TOAST } from "@/lib/toast-copy";
 
 export type { DismissedOrphan, InboxOrphan, UnclassifiedMessage };
@@ -52,20 +50,6 @@ export type InboxCandidate = {
   url: string;
   price: string;
 };
-
-/** Cross-posting is collapsed into one entry, so surface how far it spread. */
-function ReachBadge({ groups }: { groups: number }) {
-  if (groups < 2) return null;
-  return (
-    <span
-      title={`A mesma mensagem apareceu em ${groups} grupos`}
-      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 font-mono text-[10px] font-semibold text-primary tabular-nums"
-    >
-      <Megaphone className="size-3" aria-hidden="true" />
-      {groups} grupos
-    </span>
-  );
-}
 
 export function InboxBoard(props: {
   candidates: InboxCandidate[];
@@ -102,20 +86,13 @@ export function InboxBoard(props: {
         }
       />
 
-      <div className="grid grid-cols-3 overflow-hidden rounded-[var(--radius)] border border-border/80 bg-card">
-        <div className="p-4 md:p-5">
-          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Pendências</p>
-          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(total).padStart(2, "0")}</p>
-        </div>
-        <div className="border-x border-border/80 p-4 md:p-5">
-          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Candidatos</p>
-          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(candidates.length).padStart(2, "0")}</p>
-        </div>
-        <div className="p-4 md:p-5">
-          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Órfãos</p>
-          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(orphans.length).padStart(2, "0")}</p>
-        </div>
-      </div>
+      <StatGrid
+        stats={[
+          { label: "Pendências", value: String(total).padStart(2, "0") },
+          { label: "Candidatos", value: String(candidates.length).padStart(2, "0") },
+          { label: "Órfãos", value: String(orphans.length).padStart(2, "0") },
+        ]}
+      />
 
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
         <section className="space-y-4">
@@ -153,8 +130,7 @@ export function InboxBoard(props: {
                               className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground tabular-nums"
                             >
                               <Layers className="size-3" aria-hidden="true" />
-                              festa {candidate.part.order} de{" "}
-                              {candidate.part.total}
+                              festa {candidate.part.order} de {candidate.part.total}
                             </span>
                           ) : null}
                           <ReachBadge groups={candidate.groupReach} />
@@ -219,20 +195,53 @@ export function InboxBoard(props: {
                       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
                         <div className="space-y-2">
                           <Label htmlFor={`lot-${candidate.id}`}>Lote</Label>
-                          <Input id={`lot-${candidate.id}`} name="lot" defaultValue={candidate.lot} placeholder="1º lote" disabled={busy} aria-busy={busy || undefined} />
+                          <Input
+                            id={`lot-${candidate.id}`}
+                            name="lot"
+                            defaultValue={candidate.lot}
+                            placeholder="1º lote"
+                            disabled={busy}
+                            aria-busy={busy || undefined}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor={`price-${candidate.id}`}>Preço</Label>
-                          <Input id={`price-${candidate.id}`} name="price" type="number" step="0.01" defaultValue={candidate.price} placeholder="0,00" disabled={busy} aria-busy={busy || undefined} />
+                          <Input
+                            id={`price-${candidate.id}`}
+                            name="price"
+                            type="number"
+                            step="0.01"
+                            defaultValue={candidate.price}
+                            placeholder="0,00"
+                            disabled={busy}
+                            aria-busy={busy || undefined}
+                          />
                         </div>
                         <div className="col-span-2 space-y-2 md:col-span-1">
                           <Label htmlFor={`nota-${candidate.id}`}>Nota</Label>
-                          <Input id={`nota-${candidate.id}`} name="nota" type="number" min={1} max={5} placeholder="1–5" disabled={busy} aria-busy={busy || undefined} />
+                          <Input
+                            id={`nota-${candidate.id}`}
+                            name="nota"
+                            type="number"
+                            min={1}
+                            max={5}
+                            placeholder="1–5"
+                            disabled={busy}
+                            aria-busy={busy || undefined}
+                          />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor={`url-${candidate.id}`}>Link de venda</Label>
-                        <Input id={`url-${candidate.id}`} name="url" type="url" defaultValue={candidate.url} placeholder="https://" disabled={busy} aria-busy={busy || undefined} />
+                        <Input
+                          id={`url-${candidate.id}`}
+                          name="url"
+                          type="url"
+                          defaultValue={candidate.url}
+                          placeholder="https://"
+                          disabled={busy}
+                          aria-busy={busy || undefined}
+                        />
                       </div>
                       <div className="flex flex-col-reverse gap-2 border-t border-border/65 pt-4 sm:flex-row sm:items-center sm:justify-between">
                         {/* Rejecting clears one card; silencing clears every
@@ -252,12 +261,21 @@ export function InboxBoard(props: {
                             onClick={() => {
                               const fd = new FormData();
                               fd.set("candidateId", candidate.id);
-                              submit(candidate.id, actionRejectCandidate, fd, TOAST.rejected);
+                              submit(
+                                candidate.id,
+                                actionRejectCandidate,
+                                fd,
+                                TOAST.rejected,
+                              );
                             }}
                           >
                             <Trash2 /> Rejeitar
                           </Button>
-                          <Button type="submit" disabled={busy} aria-busy={busy || undefined}>
+                          <Button
+                            type="submit"
+                            disabled={busy}
+                            aria-busy={busy || undefined}
+                          >
                             <Check /> Confirmar festa
                           </Button>
                         </div>
@@ -271,11 +289,7 @@ export function InboxBoard(props: {
         </section>
 
         <div className="space-y-4 lg:sticky lg:top-8">
-          <OrphanList
-            orphans={orphans}
-            dismissed={dismissed}
-            upcoming={upcoming}
-          />
+          <OrphanList orphans={orphans} dismissed={dismissed} upcoming={upcoming} />
           <UnclassifiedList messages={unclassified} />
         </div>
       </div>

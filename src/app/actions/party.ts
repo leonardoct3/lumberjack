@@ -1,113 +1,121 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { PartyStatus, Platform } from "@prisma/client";
+import type { PartyStatus } from "@prisma/client";
+import { verifyOperatorSession } from "@/auth/session";
 import { discardParty } from "@/catalog/discard-party";
 import { mergeParties } from "@/catalog/merge-parties";
 import { addLot, enqueueWatchlist, updateLot, updateParty } from "@/catalog/party";
 import { unlinkSignal } from "@/catalog/unlink";
 import { closeLot } from "@/catalog/watchlist";
 import { prisma } from "@/db/client";
+import {
+  formAliases,
+  formDateTime,
+  formEnum,
+  formId,
+  optionalFiniteNumber,
+  optionalFormText,
+  optionalUrl,
+  requiredFormText,
+} from "@/lib/form";
 
-const STATUSES = new Set<PartyStatus>(["upcoming", "past", "cancelled"]);
-const PLATFORMS = new Set<Platform>([
+const STATUSES = [
+  "upcoming",
+  "past",
+  "cancelled",
+] as const satisfies readonly PartyStatus[];
+const PLATFORMS = [
   "sympla",
   "gandaya",
   "blacktag",
   "ingresse",
   "other",
   "unknown",
-]);
+] as const;
 
 export async function actionUpdateParty(formData: FormData) {
-  const partyId = String(formData.get("partyId") ?? "");
-  const name = String(formData.get("name") ?? "").trim();
-  const statusRaw = String(formData.get("status") ?? "");
-  const status = STATUSES.has(statusRaw as PartyStatus)
-    ? (statusRaw as PartyStatus)
-    : "upcoming";
-  const notaRaw = optionalString(formData.get("nota"));
-  const notes = optionalString(formData.get("notes")) ?? null;
+  await verifyOperatorSession();
+  const partyId = formId(formData, "partyId");
+  const name = requiredFormText(formData, "name");
+  const status = formEnum(formData, "status", STATUSES);
+  const notes = optionalFormText(formData, "notes") ?? null;
 
   await updateParty(prisma, {
     partyId,
     name,
-    eventAt: parseEventAt(String(formData.get("eventAt") ?? "")),
+    eventAt: formDateTime(formData, "eventAt"),
     status,
-    aliases: parseAliases(String(formData.get("aliases") ?? "")),
-    qualitativeScore: notaRaw != null ? Number(notaRaw) : null,
+    aliases: formAliases(formData, "aliases"),
+    qualitativeScore:
+      optionalFiniteNumber(formData, "nota", { min: 1, max: 5 }) ?? null,
     notes,
   });
   revalidateParty(partyId);
 }
 
 export async function actionAddLot(formData: FormData) {
-  const partyId = String(formData.get("partyId") ?? "");
-  const label = String(formData.get("label") ?? "").trim();
-  const url = optionalString(formData.get("url"));
-  const priceRaw = optionalString(formData.get("price"));
-  const platformRaw = String(formData.get("platform") ?? "unknown");
-  const platform = PLATFORMS.has(platformRaw as Platform)
-    ? (platformRaw as Platform)
-    : "unknown";
+  await verifyOperatorSession();
+  const partyId = formId(formData, "partyId");
+  const label = requiredFormText(formData, "label");
+  const url = optionalUrl(formData, "url");
+  const platform = formEnum(formData, "platform", PLATFORMS);
 
   await addLot(prisma, {
     partyId,
     label,
     url,
-    price: priceRaw != null ? Number(priceRaw) : undefined,
+    price: optionalFiniteNumber(formData, "price", { min: 0 }),
     platform,
   });
   revalidateParty(partyId);
 }
 
 export async function actionUpdateLot(formData: FormData) {
-  const lotId = String(formData.get("lotId") ?? "");
-  const partyId = String(formData.get("partyId") ?? "");
-  const label = String(formData.get("label") ?? "").trim();
-  if (!lotId || !label) return;
-
-  const priceRaw = optionalString(formData.get("price"));
-  const price = priceRaw != null ? Number(priceRaw) : null;
-  const platformRaw = String(formData.get("platform") ?? "unknown");
+  await verifyOperatorSession();
+  const lotId = formId(formData, "lotId");
+  const partyId = formId(formData, "partyId");
+  const label = requiredFormText(formData, "label");
 
   await updateLot(prisma, {
     lotId,
     label,
-    url: optionalString(formData.get("url")) ?? null,
-    price: price != null && Number.isFinite(price) ? price : null,
-    platform: PLATFORMS.has(platformRaw as Platform)
-      ? (platformRaw as Platform)
-      : "unknown",
+    url: optionalUrl(formData, "url") ?? null,
+    price: optionalFiniteNumber(formData, "price", { min: 0 }) ?? null,
+    platform: formEnum(formData, "platform", PLATFORMS),
   });
   revalidateParty(partyId);
 }
 
 export async function actionUnlinkSignal(formData: FormData) {
-  const signalId = String(formData.get("signalId") ?? "");
-  const partyId = String(formData.get("partyId") ?? "");
+  await verifyOperatorSession();
+  const signalId = formId(formData, "signalId");
+  const partyId = formId(formData, "partyId");
   await unlinkSignal(prisma, signalId);
   revalidateParty(partyId);
 }
 
 export async function actionCloseLot(formData: FormData) {
-  const lotId = String(formData.get("lotId") ?? "");
-  const partyId = String(formData.get("partyId") ?? "");
+  await verifyOperatorSession();
+  const lotId = formId(formData, "lotId");
+  const partyId = formId(formData, "partyId");
   await closeLot(prisma, lotId, new Date());
   revalidateParty(partyId);
 }
 
 export async function actionEnqueueWatchlist(formData: FormData) {
-  const partyId = String(formData.get("partyId") ?? "");
+  await verifyOperatorSession();
+  const partyId = formId(formData, "partyId");
   await enqueueWatchlist(prisma, partyId);
   revalidateParty(partyId);
 }
 
 /** The current party is the duplicate: it folds into the chosen survivor. */
 export async function actionMergeParty(formData: FormData) {
-  const sourceId = String(formData.get("partyId") ?? "");
-  const targetId = String(formData.get("targetId") ?? "");
-  if (!sourceId || !targetId || sourceId === targetId) return;
+  await verifyOperatorSession();
+  const sourceId = formId(formData, "partyId");
+  const targetId = formId(formData, "targetId");
+  if (sourceId === targetId) throw new Error("Escolha outra festa para fundir.");
 
   await mergeParties(prisma, { sourceId, targetId });
   revalidateParty(sourceId);
@@ -116,8 +124,8 @@ export async function actionMergeParty(formData: FormData) {
 }
 
 export async function actionDiscardParty(formData: FormData) {
-  const partyId = String(formData.get("partyId") ?? "");
-  if (!partyId) return;
+  await verifyOperatorSession();
+  const partyId = formId(formData, "partyId");
 
   await discardParty(prisma, partyId);
   revalidateParty(partyId);
@@ -128,23 +136,4 @@ function revalidateParty(partyId: string) {
   revalidatePath("/heat");
   revalidatePath("/watchlist");
   if (partyId) revalidatePath(`/parties/${partyId}`);
-}
-
-function optionalString(value: FormDataEntryValue | null): string | undefined {
-  const text = String(value ?? "").trim();
-  return text === "" ? undefined : text;
-}
-
-function parseAliases(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((alias) => alias.trim())
-    .filter((alias) => alias.length > 0);
-}
-
-function parseEventAt(raw: string): Date {
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
-    return new Date(`${raw}:00-03:00`);
-  }
-  return new Date(raw);
 }

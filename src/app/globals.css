@@ -11,6 +11,7 @@
   --popover: #1a181f;
   --popover-foreground: #f4f1ea;
   --primary: #c16bff;
+  --primary-hover: #d58cff;
   --primary-foreground: #180a22;
   --secondary: #201e25;
   --secondary-foreground: #f4f1ea;
@@ -31,6 +32,9 @@
   --sidebar-width: 252px;
   --sidebar-motion-duration: 300ms;
   --sidebar-motion-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-card: 0 18px 50px rgba(0, 0, 0, 0.14);
+  --shadow-popover: 0 18px 50px rgba(0, 0, 0, 0.35);
+  --shadow-primary: 0 8px 26px rgba(193, 107, 255, 0.2);
   --font-geist: var(--font-geist-sans);
 }
 
@@ -46,6 +50,7 @@ html[data-sidebar-state="collapsed"] {
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -110,14 +115,12 @@ select {
 @media (min-width: 768px) {
   .sidebar-panel {
     width: var(--sidebar-width);
-    transition: width var(--sidebar-motion-duration)
-      var(--sidebar-motion-easing);
+    transition: width var(--sidebar-motion-duration) var(--sidebar-motion-easing);
   }
 
   .sidebar-main {
     padding-left: var(--sidebar-width);
-    transition: padding-left var(--sidebar-motion-duration)
-      var(--sidebar-motion-easing);
+    transition: padding-left var(--sidebar-motion-duration) var(--sidebar-motion-easing);
   }
 
   .sidebar-copy,
@@ -133,8 +136,7 @@ select {
 
   .sidebar-toggle-icon {
     transform: rotate(0deg);
-    transition: transform var(--sidebar-motion-duration)
-      var(--sidebar-motion-easing);
+    transition: transform var(--sidebar-motion-duration) var(--sidebar-motion-easing);
   }
 
   html[data-sidebar-state="collapsed"] .sidebar-copy,

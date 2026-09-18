@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import type { Prisma } from "@prisma/client";
 import {
   InboxBoard,
   type DismissedOrphan,
@@ -8,55 +7,24 @@ import {
   type UnclassifiedMessage,
 } from "@/components/inbox/inbox-board";
 import { prisma } from "@/db/client";
-import { TICKET_NOUNS } from "@/domain/classify";
+import { verifyOperatorSession } from "@/auth/session";
 import { extractCandidate } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
+import { NOT_MUTED, orphanWhere, unclassifiedWhere } from "@/features/inbox/queries";
 import { formatWhen, toDatetimeLocal } from "@/lib/datetime";
 
 export const metadata: Metadata = { title: "Inbox de sinais" };
-
-/**
- * A silenced sender asks for nothing: their messages stay in the history and
- * out of every queue, or muting would only move the noise one list down.
- */
-const NOT_MUTED = { sender: { muted: false } } as const;
-
-/** Copies of a cross-posted text ride along with their canonical message. */
-function orphanWhere(dismissed: boolean): Prisma.MessageWhereInput {
-  return {
-    class: { in: ["pista_oferta", "pista_procura"] },
-    signals: { none: {} },
-    duplicateOfId: null,
-    dismissedAt: dismissed ? { not: null } : null,
-    ...NOT_MUTED,
-  };
-}
-
-/**
- * Ruído that mentions a ticket: the rules had no verb to go by, so the operator
- * decides. Plain chatter stays out, or the drawer would be all "bom dia".
- */
-const unclassifiedWhere: Prisma.MessageWhereInput = {
-  class: "ruido",
-  signals: { none: {} },
-  duplicateOfId: null,
-  dismissedAt: null,
-  ...NOT_MUTED,
-  OR: TICKET_NOUNS.map((noun) => ({
-    text: { contains: noun, mode: "insensitive" as const },
-  })),
-};
 
 /** How many groups saw this text. Spreading wide is itself a sign of urgency. */
 function groupReach(message: {
   groupId: string;
   duplicates: { groupId: string }[];
 }): number {
-  return new Set([message.groupId, ...message.duplicates.map((d) => d.groupId)])
-    .size;
+  return new Set([message.groupId, ...message.duplicates.map((d) => d.groupId)]).size;
 }
 
 export default async function InboxPage() {
+  await verifyOperatorSession();
   const [candidates, orphans, dismissed, unclassified, upcoming] = await Promise.all([
     prisma.partyCandidate.findMany({
       where: { status: "pending", source: NOT_MUTED },
@@ -112,8 +80,7 @@ export default async function InboxPage() {
     if (group.length < 2) continue;
     const ordered = [...group].sort(
       (a, b) =>
-        a.source.text.indexOf(a.excerpt ?? "") -
-        b.source.text.indexOf(b.excerpt ?? ""),
+        a.source.text.indexOf(a.excerpt ?? "") - b.source.text.indexOf(b.excerpt ?? ""),
     );
     ordered.forEach((candidate, index) => {
       part.set(candidate.id, { order: index + 1, total: group.length });
@@ -136,20 +103,19 @@ export default async function InboxPage() {
 
   const mappedCandidates: InboxCandidate[] = sorted.map((candidate) => {
     return {
-    id: candidate.id,
-    sourceText: candidate.excerpt ?? candidate.source.text,
-    part: part.get(candidate.id) ?? null,
-    groupReach: groupReach(candidate.source),
-    senderId: candidate.source.senderId,
-    senderName: candidate.source.sender.name ?? candidate.source.sender.waId,
-    name: candidate.name ?? "",
-    eventAtLocal: candidate.eventAt
-      ? toDatetimeLocal(candidate.eventAt.toISOString())
-      : "",
-    lot: candidate.lotLabel ?? "",
-    url: candidate.url ?? "",
-    price:
-      candidate.officialPrice != null ? String(candidate.officialPrice) : "",
+      id: candidate.id,
+      sourceText: candidate.excerpt ?? candidate.source.text,
+      part: part.get(candidate.id) ?? null,
+      groupReach: groupReach(candidate.source),
+      senderId: candidate.source.senderId,
+      senderName: candidate.source.sender.name ?? candidate.source.sender.waId,
+      name: candidate.name ?? "",
+      eventAtLocal: candidate.eventAt
+        ? toDatetimeLocal(candidate.eventAt.toISOString())
+        : "",
+      lot: candidate.lotLabel ?? "",
+      url: candidate.url ?? "",
+      price: candidate.officialPrice != null ? String(candidate.officialPrice) : "",
     };
   });
 

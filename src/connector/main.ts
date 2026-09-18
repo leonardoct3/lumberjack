@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import makeWASocket, {
   DisconnectReason,
   isJidGroup,
-  useMultiFileAuthState,
+  useMultiFileAuthState as getMultiFileAuthState,
   type WAMessage,
   type WASocket,
 } from "@whiskeysockets/baileys";
@@ -208,7 +208,7 @@ async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
 }
 
 async function connectSocket(): Promise<void> {
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  const { state, saveCreds } = await getMultiFileAuthState(authDir);
   const sock = makeWASocket({ auth: state });
 
   sock.ev.on("creds.update", saveCreds);

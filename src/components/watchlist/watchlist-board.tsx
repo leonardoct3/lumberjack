@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
 import {
   ArrowDown,
   ArrowRight,
@@ -21,6 +19,7 @@ import {
   actionRemoveFromWatchlist,
 } from "@/app/actions/watchlist";
 import { Badge } from "@/components/ui/badge";
+import { useRowActions } from "@/components/inbox/use-row-actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -34,7 +33,6 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, SectionHeader } from "@/components/ui/page-header";
 import { formatEventWhen } from "@/lib/datetime";
-import { runAction } from "@/lib/run-action";
 import { TOAST } from "@/lib/toast-copy";
 
 // Header and rows must share one template, or the `auto` action track sizes
@@ -73,28 +71,7 @@ function HeatValue({ heat }: { heat: number | null }) {
 }
 
 export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
-  const router = useRouter();
-  const [, start] = useTransition();
-  const [pendingIds, setPendingIds] = useState(() => new Set<string>());
-  const refresh = () => router.refresh();
-
-  function submit(
-    id: string,
-    action: (fd: FormData) => Promise<void>,
-    fd: FormData,
-    success: string,
-  ) {
-    setPendingIds((prev) => new Set(prev).add(id));
-    start(() => {
-      void runAction(action, fd, success, refresh).finally(() =>
-        setPendingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        }),
-      );
-    });
-  }
+  const { pendingIds, submit } = useRowActions();
 
   function move(item: WatchlistItem, direction: "up" | "down") {
     const fd = new FormData();
@@ -180,10 +157,7 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
           <DropdownMenuSeparator />
           {/* With two or more open lots there is no telling which one this
               would close, so that decision belongs on the party page. */}
-          <DropdownMenuItem
-            disabled={!oneLot}
-            onSelect={() => closeSingleLot(item)}
-          >
+          <DropdownMenuItem disabled={!oneLot} onSelect={() => closeSingleLot(item)}>
             <TicketCheck />
             {oneLot ? "Fechar lote" : "Vários lotes: feche no detalhe"}
           </DropdownMenuItem>
@@ -378,7 +352,9 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                     <div className="min-w-0 pr-3 text-xs">
                       <span className="flex items-center gap-2">
                         <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{formatEventWhen(item.eventAt)}</span>
+                        <span className="truncate">
+                          {formatEventWhen(item.eventAt)}
+                        </span>
                       </span>
                       <span className="mt-1 block pl-[22px] text-[11px] text-muted-foreground">
                         {item.countdown}
@@ -433,7 +409,9 @@ export function WatchlistBoard({ items }: { items: WatchlistItem[] }) {
                         <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
                           <CalendarDays className="size-3.5 shrink-0" />
                           {formatEventWhen(item.eventAt)}
-                          <span className="text-muted-foreground/70">· {item.countdown}</span>
+                          <span className="text-muted-foreground/70">
+                            · {item.countdown}
+                          </span>
                         </p>
                       </div>
                     </div>

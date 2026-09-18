@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useLayoutEffect,
   useState,
   type ReactNode,
 } from "react";
@@ -20,21 +19,14 @@ type SidebarContextValue = {
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
-
-  useLayoutEffect(() => {
-    let state: SidebarState = "expanded";
-
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw === "collapsed" || raw === "expanded") state = raw;
+      return window.localStorage.getItem(STORAGE_KEY) === "collapsed";
     } catch {
-      // private mode / blocked storage
+      return false;
     }
-
-    document.documentElement.dataset.sidebarState = state;
-    setCollapsed(state === "collapsed");
-  }, []);
+  });
 
   const toggle = useCallback(() => {
     const next: SidebarState =

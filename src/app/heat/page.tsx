@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import {
-  HeatBoard,
-  type HeatRow,
-} from "@/components/heat/heat-board";
+import { verifyOperatorSession } from "@/auth/session";
+import { HeatBoard, type HeatRow } from "@/components/heat/heat-board";
 import { prisma } from "@/db/client";
 import { canRankOnHeat } from "@/domain/gates";
 import {
@@ -12,6 +10,7 @@ import {
   snapshotNearest,
 } from "@/domain/heat";
 import { latestSnapshot } from "@/jobs/refresh-heat";
+import { now } from "@/lib/clock";
 
 export const metadata: Metadata = { title: "Mapa de calor" };
 
@@ -61,6 +60,7 @@ export default async function HeatPage({
 }: {
   searchParams: Promise<{ janela?: string; grupo?: string }>;
 }) {
+  await verifyOperatorSession();
   const params = await searchParams;
   const janela = parseWindow(params.janela) ?? 7;
   const grupo = params.grupo?.trim() || "";
@@ -84,7 +84,7 @@ export default async function HeatPage({
     }),
   ]);
 
-  const now = Date.now();
+  const currentTime = now();
 
   const mapped = parties
     .filter((party) => canRankOnHeat(party.status))
@@ -116,9 +116,9 @@ export default async function HeatPage({
       const before = snapshotNearest(
         party.heatSnapshots.filter(
           (candidate) =>
-            candidate.computedAt.getTime() <= now - TREND_LOOKBACK_MS / 2,
+            candidate.computedAt.getTime() <= currentTime - TREND_LOOKBACK_MS / 2,
         ),
-        new Date(now - TREND_LOOKBACK_MS),
+        new Date(currentTime - TREND_LOOKBACK_MS),
       );
       const previous = before
         ? computePressure({
@@ -155,9 +155,7 @@ export default async function HeatPage({
     return latest;
   }, null);
 
-  const rows: HeatRow[] = mapped.map(
-    ({ computedAt: _computedAt, ...row }) => row,
-  );
+  const rows: HeatRow[] = mapped;
 
   return (
     <main>

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { verifyOperatorSession } from "@/auth/session";
 import {
   PartyBoard,
   type PartyLot,
@@ -14,6 +15,7 @@ export default async function PartyDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await verifyOperatorSession();
   const { id } = await params;
   const party = await prisma.party.findUnique({
     where: { id },
@@ -42,9 +44,7 @@ export default async function PartyDetailPage({
   // Stable sort keeps the date order inside each half.
   const mergeTargets: PartyMergeTarget[] = others
     .slice()
-    .sort(
-      (a, b) => Number(similarIds.has(b.id)) - Number(similarIds.has(a.id)),
-    )
+    .sort((a, b) => Number(similarIds.has(b.id)) - Number(similarIds.has(a.id)))
     .map((other) => ({
       id: other.id,
       name: other.name,
@@ -81,9 +81,7 @@ export default async function PartyDetailPage({
       isCandidateSource: message.candidates.length > 0,
       signals: message.signals.map((signal) => ({
         id: signal.id,
-        kind: (signal.type === "demand" ? "procura" : "oferta") as
-          | "procura"
-          | "oferta",
+        kind: (signal.type === "demand" ? "procura" : "oferta") as "procura" | "oferta",
       })),
     })),
     ...party.signals
@@ -99,8 +97,7 @@ export default async function PartyDetailPage({
           {
             id: signal.id,
             kind: (signal.type === "demand" ? "procura" : "oferta") as
-              | "procura"
-              | "oferta",
+              "procura" | "oferta",
           },
         ],
       })),
@@ -115,10 +112,7 @@ export default async function PartyDetailPage({
           eventAt: party.eventAt.toISOString(),
           status: party.status,
           aliases: party.aliases.join(", "),
-          nota:
-            party.qualitativeScore != null
-              ? String(party.qualitativeScore)
-              : "",
+          nota: party.qualitativeScore != null ? String(party.qualitativeScore) : "",
           notes: party.notes ?? "",
           watchlistPosition: party.watchlistPosition,
         }}

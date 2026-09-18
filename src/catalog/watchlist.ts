@@ -1,8 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { canAppearOnWatchlist } from "@/domain/gates";
 import { normalizeText } from "@/domain/normalize";
-
-const ORPHAN_CLASSES = ["pista_oferta", "pista_procura"] as const;
+import { hasVisibleInboxWork } from "@/features/inbox/queries";
 
 export async function listWatchlist(db: PrismaClient) {
   const parties = await db.party.findMany({
@@ -38,7 +37,11 @@ export async function moveWatchlist(
   const swapIndex = direction === "up" ? index - 1 : index + 1;
   const neighbor = queued[swapIndex];
   const current = queued[index];
-  if (!neighbor || current.watchlistPosition == null || neighbor.watchlistPosition == null) {
+  if (
+    !neighbor ||
+    current.watchlistPosition == null ||
+    neighbor.watchlistPosition == null
+  ) {
     return;
   }
 
@@ -88,16 +91,7 @@ export async function closeLot(
 export async function homeDestination(
   db: PrismaClient,
 ): Promise<"/inbox" | "/watchlist" | "/heat"> {
-  const [pending, orphans] = await Promise.all([
-    db.partyCandidate.count({ where: { status: "pending" } }),
-    db.message.count({
-      where: {
-        class: { in: [...ORPHAN_CLASSES] },
-        signals: { none: {} },
-      },
-    }),
-  ]);
-  if (pending > 0 || orphans > 0) return "/inbox";
+  if (await hasVisibleInboxWork(db)) return "/inbox";
 
   const watchlist = await listWatchlist(db);
   if (watchlist.length > 0) return "/watchlist";

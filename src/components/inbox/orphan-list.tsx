@@ -7,7 +7,6 @@ import {
   CalendarPlus,
   EyeOff,
   Link2,
-  Megaphone,
   Plus,
   RotateCcw,
   UserRound,
@@ -25,7 +24,9 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { SectionHeader } from "@/components/ui/page-header";
+import { ReachBadge } from "@/components/ui/reach-badge";
 import { TOAST } from "@/lib/toast-copy";
 import { SimilarWarning } from "./similar-warning";
 import { useRowActions } from "./use-row-actions";
@@ -49,23 +50,6 @@ export type DismissedOrphan = {
 
 /** Long lists are the norm here, so the column starts short and grows on demand. */
 const PAGE_SIZE = 8;
-
-const selectClassName =
-  "h-10 w-full rounded-[10px] border border-input bg-background/55 px-3.5 text-sm outline-none transition-colors hover:border-muted-foreground/45 focus:border-ring focus:ring-3 focus:ring-ring/12 disabled:opacity-60";
-
-/** Cross-posting is collapsed into one entry, so surface how far it spread. */
-function ReachBadge({ groups }: { groups: number }) {
-  if (groups < 2) return null;
-  return (
-    <span
-      title={`A mesma mensagem apareceu em ${groups} grupos`}
-      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 font-mono text-[10px] font-semibold text-primary tabular-nums"
-    >
-      <Megaphone className="size-3" aria-hidden="true" />
-      {groups} grupos
-    </span>
-  );
-}
 
 export function OrphanList(props: {
   orphans: InboxOrphan[];
@@ -152,12 +136,11 @@ export function OrphanList(props: {
               <X /> Limpar
             </Button>
           </div>
-          <select
+          <NativeSelect
             aria-label="Festa para vincular as mensagens selecionadas"
             value={effectivePartyId}
             onChange={(event) => setBulkPartyId(event.target.value)}
             disabled={!hasParties || pendingIds.has("bulk")}
-            className={selectClassName}
           >
             <option value="">Selecionar festa</option>
             {upcoming.map((party) => (
@@ -165,7 +148,7 @@ export function OrphanList(props: {
                 {party.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           <Button
             type="button"
             className="w-full"
@@ -313,14 +296,13 @@ export function OrphanList(props: {
                     <input type="hidden" name="messageId" value={orphan.id} />
                     <div className="space-y-2">
                       <Label htmlFor={`party-${orphan.id}`}>Vincular à festa</Label>
-                      <select
+                      <NativeSelect
                         id={`party-${orphan.id}`}
                         name="partyId"
                         defaultValue={orphan.defaultPartyId}
                         required
                         disabled={busy || !hasParties}
                         aria-busy={busy || undefined}
-                        className={selectClassName}
                       >
                         <option value="" disabled>
                           {hasParties
@@ -332,7 +314,7 @@ export function OrphanList(props: {
                             {party.name}
                           </option>
                         ))}
-                      </select>
+                      </NativeSelect>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
@@ -366,12 +348,7 @@ export function OrphanList(props: {
                         onClick={() => {
                           const fd = new FormData();
                           fd.set("messageId", orphan.id);
-                          submit(
-                            orphan.id,
-                            actionDismissOrphan,
-                            fd,
-                            TOAST.dismissed,
-                          );
+                          submit(orphan.id, actionDismissOrphan, fd, TOAST.dismissed);
                         }}
                       >
                         <EyeOff />
@@ -428,12 +405,7 @@ export function OrphanList(props: {
                   onClick={() => {
                     const fd = new FormData();
                     fd.set("messageId", message.id);
-                    submit(
-                      message.id,
-                      actionRestoreOrphan,
-                      fd,
-                      TOAST.restored,
-                    );
+                    submit(message.id, actionRestoreOrphan, fd, TOAST.restored);
                   }}
                 >
                   <RotateCcw />

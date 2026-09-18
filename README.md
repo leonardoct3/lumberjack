@@ -66,6 +66,7 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 | `npm run db:migrate` | Prisma migrate |
 | `npm run db:seed` | Fixture: 1 listen group, 1 admin, 1 pista, ~20 classified messages (destructive) |
 | `npm run db:test:setup` | Create + migrate `lumberjack_test` |
+| `npm run db:e2e:setup` | Create + migrate the isolated `lumberjack_e2e_test` browser-test database |
 | `npm run db:dedupe` | Retrofit cross-post collapsing on old rows (dry run; add `-- --apply`) |
 | `npm run db:reclassify` | Replay the classifier over stored messages (dry run; add `-- --apply`) |
 | `npm run dev` | Next.js |
@@ -74,6 +75,8 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 | `npm run worker` | One batch pass |
 | `npm run connector` | Baileys connector |
 | `npm test` | `tsc --noEmit` + Vitest (serial files, against `lumberjack_test`) |
+| `npm run test:e2e` | Set up the E2E database and run Playwright workflows (requires Playwright browsers) |
+| `npm run verify` | Check formatting, linting, types, Vitest, and a production build |
 
 ## UI
 
