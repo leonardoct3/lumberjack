@@ -1,4 +1,5 @@
 import { normalizeText } from "./normalize";
+import { splitAdBlocks } from "./split-ad";
 import { zonedParts } from "./timezone";
 
 export type Platform =
@@ -16,6 +17,12 @@ export type ExtractedCandidate = {
   officialPrice: number | null;
   eventAt: Date | null;
   platform: Platform;
+  /**
+   * The slice of a multi-festa blast this reading came from, so the queue can
+   * show the four lines about *this* festa instead of the whole season. Null
+   * when the message announced one festa and the message is the excerpt.
+   */
+  excerpt: string | null;
 };
 
 const URL_RE = /https?:\/\/\S+/i;
@@ -218,5 +225,52 @@ export function extractCandidate(text: string, now: Date = new Date()): Extracte
     officialPrice,
     eventAt: extractEventAt(text, now),
     platform,
+    excerpt: null,
   };
+}
+
+/**
+ * Every block of a split blast ends with a link by construction, so a link
+ * proves nothing about it: a date or a price is what says a festa was really
+ * announced there, rather than an Instagram handle sitting between two ads.
+ */
+function isBlockCandidate(candidate: ExtractedCandidate): boolean {
+  return (
+    candidate.name != null &&
+    (candidate.eventAt != null || candidate.officialPrice != null)
+  );
+}
+
+/**
+ * Everything a message announces, which is usually one festa and sometimes a
+ * whole Réveillon season. Splitting only wins when the blocks read as two
+ * different festas; anything else — two links to the same festa, a link plus a
+ * social handle — falls back to reading the message as a whole, which is what
+ * it did before and what it does well.
+ */
+export function extractCandidates(
+  text: string,
+  now: Date = new Date(),
+): ExtractedCandidate[] {
+  const blocks = splitAdBlocks(text);
+
+  if (blocks.length > 1) {
+    const seen = new Set<string>();
+    const many: ExtractedCandidate[] = [];
+
+    for (const block of blocks) {
+      const candidate = extractCandidate(block, now);
+      if (!isBlockCandidate(candidate)) continue;
+      // The same festa linked twice is one festa, not two queue rows.
+      const key = normalizeText(candidate.name ?? "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      many.push({ ...candidate, excerpt: block });
+    }
+
+    if (many.length > 1) return many;
+  }
+
+  const whole = extractCandidate(text, now);
+  return isActionableCandidate(whole) ? [whole] : [];
 }

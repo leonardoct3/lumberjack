@@ -84,9 +84,13 @@ async function planDedupe(db: PrismaClient): Promise<Plan> {
   ]);
 
   const signalByMessage = new Map(signals.map((s) => [s.messageId, s]));
-  const candidateByMessage = new Map(
-    candidates.map((c) => [c.sourceMessageId, c]),
-  );
+  // A blast leaves one row per festa, so a message maps to several candidates.
+  const candidatesByMessage = new Map<string, typeof candidates>();
+  for (const candidate of candidates) {
+    const current = candidatesByMessage.get(candidate.sourceMessageId) ?? [];
+    current.push(candidate);
+    candidatesByMessage.set(candidate.sourceMessageId, current);
+  }
 
   const signalsToMove: Plan["signalsToMove"] = [];
   const signalIdsToDelete: string[] = [];
@@ -113,12 +117,12 @@ async function planDedupe(db: PrismaClient): Promise<Plan> {
     }
 
     for (const id of copyIds) {
-      const candidate = candidateByMessage.get(id);
-      if (candidate?.status === "pending") {
-        candidateIdsToDelete.push(candidate.id);
-      }
-      // A confirmed candidate already spawned a party through this message.
-      if (candidate && candidate.status !== "pending") {
+      for (const candidate of candidatesByMessage.get(id) ?? []) {
+        if (candidate.status === "pending") {
+          candidateIdsToDelete.push(candidate.id);
+          continue;
+        }
+        // A confirmed candidate already spawned a party through this message.
         const copy = duplicates.find((d) => d.id === id);
         if (copy) copy.keepPartyId = true;
       }

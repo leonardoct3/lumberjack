@@ -6,6 +6,7 @@ import { classifyMessage } from "@/domain/classify";
 import {
   type ExtractedCandidate,
   extractCandidate,
+  extractCandidates,
   isActionableCandidate,
 } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
@@ -118,7 +119,7 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
         sentAt: true,
         sender: { select: { role: true, muted: true } },
         signals: { select: { id: true, type: true } },
-        candidate: {
+        candidates: {
           select: {
             id: true,
             status: true,
@@ -128,6 +129,7 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
             officialPrice: true,
             eventAt: true,
             platform: true,
+            excerpt: true,
           },
         },
       },
@@ -185,13 +187,19 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
 
     // Waiting candidates get re-read whatever the class says now, because the
     // extractor moved too, and a stale title is what the operator sees first.
-    if (message.candidate?.status === "pending") {
-      const extracted = extractCandidate(message.text, message.sentAt);
+    for (const candidate of message.candidates) {
+      if (candidate.status !== "pending") continue;
+      // A blast's rows each own a slice of the message, and re-reading the whole
+      // text for every one of them would collapse three festas into one.
+      const source = candidate.excerpt ?? message.text;
+      if (candidate.excerpt == null && message.candidates.length > 1) continue;
+
+      const extracted = extractCandidate(source, message.sentAt);
       if (!isActionableCandidate(extracted)) {
-        plan.candidatesToDrop.push(message.candidate.id);
+        plan.candidatesToDrop.push(candidate.id);
         plan.report.candidatesDropped += 1;
-      } else if (candidateDiffers(message.candidate, extracted)) {
-        plan.candidatesToRefresh.push({ id: message.candidate.id, extracted });
+      } else if (candidateDiffers(candidate, extracted)) {
+        plan.candidatesToRefresh.push({ id: candidate.id, extracted });
         plan.report.candidatesRefreshed += 1;
       }
     }
@@ -199,9 +207,12 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
     if (next === "admin_promo") {
       if (signal) plan.report.signalsToReview += 1;
       // A copy has no candidate of its own; the canonical message carries it.
-      if (!message.candidate && !message.duplicateOfId && !message.sender.muted) {
-        const extracted = extractCandidate(message.text, message.sentAt);
-        if (isActionableCandidate(extracted)) {
+      if (
+        message.candidates.length === 0 &&
+        !message.duplicateOfId &&
+        !message.sender.muted
+      ) {
+        for (const extracted of extractCandidates(message.text, message.sentAt)) {
           plan.candidatesToCreate.push({ messageId: message.id, extracted });
           plan.report.candidatesCreated += 1;
         }
@@ -211,11 +222,11 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
 
     if (!isPista(next)) {
       if (signal) plan.report.signalsToReview += 1;
-      if (message.candidate) plan.report.candidatesToReview += 1;
+      plan.report.candidatesToReview += message.candidates.length;
       continue;
     }
 
-    if (message.candidate) plan.report.candidatesToReview += 1;
+    plan.report.candidatesToReview += message.candidates.length;
 
     if (signal) {
       if (signal.type !== signalType(next)) {
@@ -298,6 +309,7 @@ async function applyPlan(db: PrismaClient, plan: Plan): Promise<void> {
         officialPrice: extracted.officialPrice,
         eventAt: extracted.eventAt,
         platform: extracted.platform,
+        excerpt: extracted.excerpt,
         sourceMessageId: messageId,
       },
     });

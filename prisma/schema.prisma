@@ -84,7 +84,8 @@ model Message {
   class        MessageClass?
   party        Party?   @relation(fields: [partyId], references: [id])
   partyId      String?
-  candidate    PartyCandidate?
+  /** A promoter blast announces a whole season, so one message, many festas. */
+  candidates   PartyCandidate[]
   signals      Signal[]
   createdAt    DateTime @default(now())
 
@@ -112,8 +113,17 @@ model PartyCandidate {
   eventAt         DateTime?
   platform        Platform        @default(unknown)
   source          Message         @relation(fields: [sourceMessageId], references: [id])
-  sourceMessageId String          @unique
+  sourceMessageId String
   createdAt       DateTime        @default(now())
+
+  /**
+   * The lines of the source message this candidate was read from, for the blasts
+   * that announce several festas at once. Null when the whole message is the
+   * excerpt, which is every message written about one festa.
+   */
+  excerpt         String?
+
+  @@index([sourceMessageId])
 }
 
 model Party {

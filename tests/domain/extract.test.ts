@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { extractCandidate, isActionableCandidate } from "@/domain/extract";
+import {
+  extractCandidate,
+  extractCandidates,
+  isActionableCandidate,
+} from "@/domain/extract";
 
 const now = new Date("2026-09-03T15:00:00Z");
 
@@ -89,6 +93,7 @@ describe("extractCandidate", () => {
       officialPrice: null,
       eventAt: null,
       platform: "unknown",
+      excerpt: null,
     });
   });
 });
@@ -120,7 +125,98 @@ describe("isActionableCandidate", () => {
         officialPrice: 180,
         eventAt: now,
         platform: "sympla",
+        excerpt: null,
       }),
     ).toBe(false);
+  });
+});
+
+/** The message that catalogued one festa and silently dropped two. */
+const SEASON_BLAST = [
+  "🌞 RÉVEILLONS BÚZIOS E RJ CAPITAL",
+  "🔗 *Cupom desconto:* CODELIS",
+  "🌊 *RÉVEILLON AREIA BÚZIOS* 🌊",
+  "_27.12 a 02.01_",
+  "📍 Clube Aretê - Búzios RJ",
+  "🍹 Open Bar Premium",
+  "🎟️ Garanta com *DESCONTO* abaixo: https://tinyurl.com/Areia2027",
+  "🐚 *A VILLA RÉVEILLON BÚZIOS* 🐚",
+  "🗓️ _29 a 31/12 + 02.01_",
+  "🍹 Full Open Bar e dia 31 +Open Food!",
+  "🎟️ Garanta com *DESCONTO* abaixo: https://tinyurl.com/AVilla2027",
+  "🪩 31.12 • *RÉVEILLON SAL* 🪩",
+  "📍 RJ - Sociedade Hibica Brasileira",
+  "🍹🍝 All Inclusive",
+  "🎟️ Garanta com *DESCONTO*: https://www.sympla.com.br/evento/reveillon-sal/3543836?d=CODELIS",
+].join("\n");
+
+describe("extractCandidates", () => {
+  it("reads every festa of a season blast", () => {
+    const found = extractCandidates(SEASON_BLAST, now);
+
+    expect(found.map((c) => c.name)).toEqual([
+      "RÉVEILLON AREIA BÚZIOS",
+      "A VILLA RÉVEILLON BÚZIOS",
+      "RÉVEILLON SAL",
+    ]);
+    expect(found.map((c) => c.url)).toEqual([
+      "https://tinyurl.com/Areia2027",
+      "https://tinyurl.com/AVilla2027",
+      "https://www.sympla.com.br/evento/reveillon-sal/3543836?d=CODELIS",
+    ]);
+    // Each festa keeps its own date, which is the whole point of the split.
+    expect(found.map((c) => c.eventAt?.toISOString().slice(0, 10))).toEqual([
+      "2026-12-27",
+      "2026-12-31",
+      "2026-12-31",
+    ]);
+    expect(found[2]?.platform).toBe("sympla");
+  });
+
+  it("gives each candidate only its own lines", () => {
+    const found = extractCandidates(SEASON_BLAST, now);
+
+    expect(found[1]?.excerpt).toContain("A VILLA RÉVEILLON BÚZIOS");
+    expect(found[1]?.excerpt).not.toContain("RÉVEILLON SAL");
+    expect(found[1]?.excerpt).not.toContain("Clube Aretê");
+  });
+
+  it("reads a single festa as one candidate, excerpt and all", () => {
+    const found = extractCandidates(
+      "*ONIX* 1º lote R$80 05/09 https://www.sympla.com.br/onix",
+      now,
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.name).toBe("ONIX");
+    expect(found[0]?.excerpt).toBeNull();
+  });
+
+  it("does not split a festa that carries two links", () => {
+    const found = extractCandidates(
+      "*ONIX* 31.12 R$180 https://www.sympla.com.br/onix\nsiga https://instagram.com/onix",
+      now,
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.name).toBe("ONIX");
+  });
+
+  it("does not split when a block has a link but no festa", () => {
+    const found = extractCandidates(
+      "*ONIX* 31.12 https://www.sympla.com.br/onix\nfique por dentro: https://chat.whatsapp.com/xyz",
+      now,
+    );
+    expect(found).toHaveLength(1);
+  });
+
+  it("keeps the same festa linked twice as one row", () => {
+    const found = extractCandidates(
+      "*ONIX* 31.12 https://www.sympla.com.br/onix\n*ONIX* 31.12 https://www.sympla.com.br/onix-2",
+      now,
+    );
+    expect(found).toHaveLength(1);
+  });
+
+  it("returns nothing for an ad that extracts into nothing", () => {
+    expect(extractCandidates("temos sem taxa e com desconto!", now)).toEqual([]);
   });
 });

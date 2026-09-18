@@ -5,7 +5,7 @@ import {
   fingerprintText,
   withinDedupeWindow,
 } from "@/domain/dedupe";
-import { extractCandidate, isActionableCandidate } from "@/domain/extract";
+import { extractCandidates } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
 
 export type RawMessageInput = {
@@ -106,20 +106,23 @@ export async function ingestRawMessage(
     return { created: true, messageId: message.id };
   }
 
+  // A season blast announces several festas at once, and each one earns its own
+  // row: reading only the first used to catalogue one and drop the rest.
   if (messageClass === "admin_promo") {
-    const extracted = extractCandidate(input.text, input.sentAt);
-    if (isActionableCandidate(extracted)) {
-      await db.partyCandidate.create({
-        data: {
-          status: "pending",
-          name: extracted.name,
-          url: extracted.url,
-          lotLabel: extracted.lotLabel,
-          officialPrice: extracted.officialPrice,
-          eventAt: extracted.eventAt,
-          platform: extracted.platform,
+    const extracted = extractCandidates(input.text, input.sentAt);
+    if (extracted.length > 0) {
+      await db.partyCandidate.createMany({
+        data: extracted.map((candidate) => ({
+          status: "pending" as const,
+          name: candidate.name,
+          url: candidate.url,
+          lotLabel: candidate.lotLabel,
+          officialPrice: candidate.officialPrice,
+          eventAt: candidate.eventAt,
+          platform: candidate.platform,
+          excerpt: candidate.excerpt,
           sourceMessageId: message.id,
-        },
+        })),
       });
     }
   }

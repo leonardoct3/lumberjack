@@ -46,7 +46,7 @@ export default async function SetupPage() {
       }),
       prisma.message.groupBy({
         by: ["senderId"],
-        where: { sentAt: { gte: since }, candidate: { isNot: null } },
+        where: { sentAt: { gte: since }, candidates: { some: {} } },
         _count: { _all: true },
       }),
       status.state === "qr" && status.qr

@@ -97,9 +97,48 @@ export default async function InboxPage() {
     status: party.status,
   }));
 
-  const mappedCandidates: InboxCandidate[] = candidates.map((candidate) => ({
+  // A season blast leaves one pending row per festa. Each card shows its own
+  // lines and says which festa of the message it is, or three cards would
+  // repeat the same fifteen lines and read as a bug. The order comes from where
+  // the excerpt sits in the message, which is stable however the rows are read.
+  const byMessage = new Map<string, typeof candidates>();
+  for (const candidate of candidates) {
+    const group = byMessage.get(candidate.sourceMessageId) ?? [];
+    group.push(candidate);
+    byMessage.set(candidate.sourceMessageId, group);
+  }
+  const part = new Map<string, { order: number; total: number }>();
+  for (const group of byMessage.values()) {
+    if (group.length < 2) continue;
+    const ordered = [...group].sort(
+      (a, b) =>
+        a.source.text.indexOf(a.excerpt ?? "") -
+        b.source.text.indexOf(b.excerpt ?? ""),
+    );
+    ordered.forEach((candidate, index) => {
+      part.set(candidate.id, { order: index + 1, total: group.length });
+    });
+  }
+
+  // Newest message first, and inside a blast the festas in the order they were
+  // announced — "festa 3 de 3" arriving above "festa 1 de 3" reads as a shuffle.
+  const arrival = new Map<string, number>();
+  for (const candidate of candidates) {
+    if (!arrival.has(candidate.sourceMessageId)) {
+      arrival.set(candidate.sourceMessageId, arrival.size);
+    }
+  }
+  const sorted = [...candidates].sort(
+    (a, b) =>
+      (arrival.get(a.sourceMessageId) ?? 0) - (arrival.get(b.sourceMessageId) ?? 0) ||
+      (part.get(a.id)?.order ?? 0) - (part.get(b.id)?.order ?? 0),
+  );
+
+  const mappedCandidates: InboxCandidate[] = sorted.map((candidate) => {
+    return {
     id: candidate.id,
-    sourceText: candidate.source.text,
+    sourceText: candidate.excerpt ?? candidate.source.text,
+    part: part.get(candidate.id) ?? null,
     groupReach: groupReach(candidate.source),
     senderId: candidate.source.senderId,
     senderName: candidate.source.sender.name ?? candidate.source.sender.waId,
@@ -111,7 +150,8 @@ export default async function InboxPage() {
     url: candidate.url ?? "",
     price:
       candidate.officialPrice != null ? String(candidate.officialPrice) : "",
-  }));
+    };
+  });
 
   const mappedOrphans: InboxOrphan[] = orphans.map((message) => {
     // Pista text rarely names a party cleanly, but it usually carries the date.

@@ -149,7 +149,8 @@ async function main(): Promise<void> {
       hours: 5,
       text: "ONIX FESTIVAL\n1º lote R$ 180 24/10 https://www.sympla.com.br/evento/onix-festival",
     },
-    // Multi-event blast, cross-posted: one junk candidate plus a reach badge.
+    // Season blast, cross-posted: three candidates, one per festa, plus a
+    // reach badge — and the copy contributes nothing of its own.
     {
       id: "demo-promo-reveillon-1",
       group: "demo-g-reveillon",

@@ -72,7 +72,7 @@ async function confirmFromMessage(
   messageId: string,
   now: Date,
 ): Promise<void> {
-  const candidate = await db.partyCandidate.findUniqueOrThrow({
+  const candidate = await db.partyCandidate.findFirstOrThrow({
     where: { sourceMessageId: messageId },
   });
   if (!candidate.name || !candidate.eventAt) {

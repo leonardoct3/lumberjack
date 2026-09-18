@@ -202,6 +202,76 @@ describe("reclassifyMessages", () => {
     expect(await prisma.partyCandidate.count()).toBe(1);
   });
 
+  it("recovers every festa of a blast that was catalogued as one", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(
+      ids,
+      "a",
+      [
+        "🌊 *RÉVEILLON AREIA BÚZIOS* 🌊 _27.12_",
+        "🎟️ *DESCONTO*: https://tinyurl.com/Areia2027",
+        "🪩 31.12 • *RÉVEILLON SAL* 🪩",
+        "🎟️ *DESCONTO*: https://www.sympla.com.br/evento/reveillon-sal/3543836",
+      ].join("\n"),
+      "admin_promo",
+    );
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+
+    expect(report.candidatesCreated).toBe(2);
+    const candidates = await prisma.partyCandidate.findMany({
+      where: { sourceMessageId: message.id },
+      orderBy: { name: "asc" },
+    });
+    expect(candidates.map((c) => c.name)).toEqual([
+      "RÉVEILLON AREIA BÚZIOS",
+      "RÉVEILLON SAL",
+    ]);
+  });
+
+  it("re-reads a blast's rows against their own lines, not the whole message", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(
+      ids,
+      "a",
+      [
+        "🌊 *RÉVEILLON AREIA BÚZIOS* 🌊 _27.12_ https://tinyurl.com/Areia2027",
+        "🪩 31.12 • *RÉVEILLON SAL* 🪩 https://www.sympla.com.br/sal",
+      ].join("\n"),
+      "admin_promo",
+    );
+    // Two rows, each owning a slice. Re-reading the whole text for both would
+    // rename the second one after the first festa and lose a festa again.
+    const sal = await prisma.partyCandidate.create({
+      data: {
+        status: "pending",
+        name: "titulo velho",
+        excerpt: "🪩 31.12 • *RÉVEILLON SAL* 🪩 https://www.sympla.com.br/sal",
+        sourceMessageId: message.id,
+      },
+    });
+    await prisma.partyCandidate.create({
+      data: {
+        status: "pending",
+        name: "RÉVEILLON AREIA BÚZIOS",
+        url: "https://tinyurl.com/Areia2027",
+        eventAt: new Date("2026-12-27T03:00:00Z"),
+        excerpt: "🌊 *RÉVEILLON AREIA BÚZIOS* 🌊 _27.12_ https://tinyurl.com/Areia2027",
+        sourceMessageId: message.id,
+      },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+
+    expect(report.candidatesCreated).toBe(0);
+    expect(report.candidatesDropped).toBe(0);
+    const stored = await prisma.partyCandidate.findUniqueOrThrow({
+      where: { id: sal.id },
+    });
+    expect(stored.name).toBe("RÉVEILLON SAL");
+    expect(stored.url).toBe("https://www.sympla.com.br/sal");
+  });
+
   it("re-reads a pending candidate with the current extractor", async () => {
     const ids = await seedBoard();
     const message = await addMessage(

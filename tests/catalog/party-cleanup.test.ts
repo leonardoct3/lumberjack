@@ -249,7 +249,7 @@ describe("discardParty", () => {
     const result = await discardParty(prisma, wrong.id);
 
     expect(result.reopened).toBe(1);
-    const candidate = await prisma.partyCandidate.findUniqueOrThrow({
+    const candidate = await prisma.partyCandidate.findFirstOrThrow({
       where: { sourceMessageId: promo.id },
     });
     expect(candidate.status).toBe("pending");
@@ -265,7 +265,7 @@ describe("discardParty", () => {
     const result = await discardParty(prisma, wrong.id);
 
     expect(result.reopened).toBe(0);
-    const candidate = await prisma.partyCandidate.findUniqueOrThrow({
+    const candidate = await prisma.partyCandidate.findFirstOrThrow({
       where: { sourceMessageId: promo.id },
     });
     expect(candidate.status).toBe("rejected");

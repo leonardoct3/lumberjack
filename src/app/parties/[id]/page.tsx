@@ -20,7 +20,7 @@ export default async function PartyDetailPage({
     include: {
       lots: { orderBy: { openedAt: "desc" } },
       messages: {
-        include: { sender: true, group: true, candidate: true, signals: true },
+        include: { sender: true, group: true, candidates: true, signals: true },
         orderBy: { sentAt: "desc" },
       },
       signals: {
@@ -78,7 +78,7 @@ export default async function PartyDetailPage({
       groupName: message.group.name,
       sender: message.sender.name ?? message.sender.waId,
       text: message.text,
-      isCandidateSource: message.candidate != null,
+      isCandidateSource: message.candidates.length > 0,
       signals: message.signals.map((signal) => ({
         id: signal.id,
         kind: (signal.type === "demand" ? "procura" : "oferta") as

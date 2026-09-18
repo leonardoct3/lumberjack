@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   Check,
   Inbox as InboxIcon,
+  Layers,
   Link2,
   Megaphone,
   MessageSquareText,
@@ -40,6 +41,8 @@ export type { DismissedOrphan, InboxOrphan, UnclassifiedMessage };
 export type InboxCandidate = {
   id: string;
   sourceText: string;
+  /** Which festa of a season blast this is, when the message carried several. */
+  part: { order: number; total: number } | null;
   groupReach: number;
   senderId: string;
   senderName: string;
@@ -144,13 +147,25 @@ export function InboxBoard(props: {
                           <span className="truncate">{candidate.senderName}</span>
                         </p>
                         <span className="flex items-center gap-2">
+                          {candidate.part ? (
+                            <span
+                              title="Uma mensagem anunciou várias festas; esta é uma delas"
+                              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground tabular-nums"
+                            >
+                              <Layers className="size-3" aria-hidden="true" />
+                              festa {candidate.part.order} de{" "}
+                              {candidate.part.total}
+                            </span>
+                          ) : null}
                           <ReachBadge groups={candidate.groupReach} />
                           <span className="font-mono text-[10px] text-muted-foreground/60">
                             #{String(index + 1).padStart(2, "0")}
                           </span>
                         </span>
                       </div>
-                      <blockquote className="mt-3 border-l-2 border-primary/30 pl-3 text-sm leading-6 text-muted-foreground">
+                      {/* An ad is written in lines, and one of those lines is
+                          the festa's name; collapsing them hid it. */}
+                      <blockquote className="mt-3 border-l-2 border-primary/30 pl-3 text-sm leading-6 whitespace-pre-line text-muted-foreground">
                         {candidate.sourceText}
                       </blockquote>
                     </div>

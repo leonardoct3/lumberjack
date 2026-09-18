@@ -72,8 +72,11 @@ export async function confirmCandidate(
       lotId = lot.id;
     }
 
-    await tx.message.update({
-      where: { id: candidate.sourceMessageId },
+    // A blast announces several festas and a message points at one party, so
+    // the first festa confirmed out of it keeps the evidence trail instead of
+    // each confirmation stealing it from the previous one.
+    await tx.message.updateMany({
+      where: { id: candidate.sourceMessageId, partyId: null },
       data: { partyId: party.id },
     });
 

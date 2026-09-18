@@ -112,7 +112,7 @@ describe("ingestRawMessage", () => {
     });
     expect(sender.role).toBe("admin");
 
-    const candidate = await prisma.partyCandidate.findUniqueOrThrow({
+    const candidate = await prisma.partyCandidate.findFirstOrThrow({
       where: { sourceMessageId: r.messageId },
     });
     expect(candidate.status).toBe("pending");
@@ -138,6 +138,37 @@ describe("ingestRawMessage", () => {
     });
     expect(message.class).toBe("admin_promo");
     expect(await prisma.partyCandidate.count()).toBe(0);
+  });
+
+  it("a season blast opens a candidate per festa, each with its own lines", async () => {
+    const r = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-season",
+        senderIsGroupAdmin: true,
+        text: [
+          "🌞 RÉVEILLONS BÚZIOS E RJ CAPITAL",
+          "🌊 *RÉVEILLON AREIA BÚZIOS* 🌊 _27.12_",
+          "🎟️ Garanta com *DESCONTO*: https://tinyurl.com/Areia2027",
+          "🪩 31.12 • *RÉVEILLON SAL* 🪩",
+          "🎟️ Garanta com *DESCONTO*: https://www.sympla.com.br/evento/reveillon-sal/3543836",
+        ].join("\n"),
+      }),
+    );
+
+    const candidates = await prisma.partyCandidate.findMany({
+      where: { sourceMessageId: r.messageId },
+      orderBy: { name: "asc" },
+    });
+    expect(candidates.map((c) => c.name)).toEqual([
+      "RÉVEILLON AREIA BÚZIOS",
+      "RÉVEILLON SAL",
+    ]);
+    // Each row carries the lines it was read from, so the queue shows the festa
+    // and not the whole season three times over.
+    expect(candidates[0]?.excerpt).toContain("Areia2027");
+    expect(candidates[0]?.excerpt).not.toContain("RÉVEILLON SAL");
+    expect(candidates[1]?.platform).toBe("sympla");
   });
 
   it("a silenced sender opens no candidate and no signal", async () => {
