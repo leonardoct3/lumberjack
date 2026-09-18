@@ -63,6 +63,13 @@ model Sender {
   messages  Message[]
   signals   Signal[]
   createdAt DateTime   @default(now())
+
+  /**
+   * Operator silenced this sender: messages are still stored for the audit
+   * trail, but they never open a candidate or a signal. For the promoters whose
+   * posts are weekly agendas and guest lists, never a festa worth cataloguing.
+   */
+  muted     Boolean    @default(false)
 }
 
 model Message {
@@ -160,9 +167,18 @@ model HeatSnapshot {
   offer1d                 Int
   offer3d                 Int
   offer7d                 Int
-  uniqueDemandSenders7d   Int
   daysToEvent             Int
-  score                   Int
+
+  /**
+   * People, not messages. One person asking five times is one buyer, which is
+   * also what makes cross-posting harmless without deduplicating anything.
+   */
+  uniqueDemandSenders1d   Int      @default(0)
+  uniqueDemandSenders3d   Int      @default(0)
+  uniqueDemandSenders7d   Int
+  uniqueOfferSenders1d    Int      @default(0)
+  uniqueOfferSenders3d    Int      @default(0)
+  uniqueOfferSenders7d    Int      @default(0)
 }
 
 enum WaState {

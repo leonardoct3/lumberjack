@@ -54,6 +54,6 @@ describe("seed fixture", () => {
     const snaps = await prisma.heatSnapshot.findMany();
     expect(snaps).toHaveLength(1);
     expect(snaps[0]?.partyId).toBe(upcoming[0]?.id);
-    expect(snaps[0]?.score).toBeGreaterThan(0);
+    expect(snaps[0]?.uniqueDemandSenders7d).toBeGreaterThan(0);
   });
 });

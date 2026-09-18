@@ -1,7 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/db/client";
 import { resetDb } from "../helpers/db";
-import { computeHeatScore } from "@/domain/heat";
 import { daysUntil } from "@/domain/timezone";
 import { latestSnapshot, refreshHeat } from "@/jobs/refresh-heat";
 
@@ -76,7 +75,7 @@ async function seedUpcomingWithSignals() {
     text: "vendo onix",
   });
 
-  return { party };
+  return { party, group, addSignal };
 }
 
 describe("refreshHeat", () => {
@@ -87,7 +86,7 @@ describe("refreshHeat", () => {
     await prisma.$disconnect();
   });
 
-  it("scores two same-sender demands 2h apart plus one offer", async () => {
+  it("counts two messages from one person as one buyer", async () => {
     const { party } = await seedUpcomingWithSignals();
     const result = await refreshHeat(prisma, now);
     expect(result).toEqual({ ok: true, parties: 1 });
@@ -95,21 +94,39 @@ describe("refreshHeat", () => {
     const snaps = await prisma.heatSnapshot.findMany({ where: { partyId: party.id } });
     expect(snaps).toHaveLength(1);
 
-    const counts = {
-      demand1d: 2,
-      demand3d: 2,
-      demand7d: 2,
-      uniqueDemandSenders7d: 1,
-      offer1d: 1,
-      offer3d: 1,
-    };
-    expect(snaps[0]!.score).toBe(computeHeatScore(counts));
     expect(snaps[0]!.demand1d).toBe(2);
+    expect(snaps[0]!.uniqueDemandSenders1d).toBe(1);
+    expect(snaps[0]!.uniqueDemandSenders3d).toBe(1);
     expect(snaps[0]!.uniqueDemandSenders7d).toBe(1);
     expect(snaps[0]!.offer1d).toBe(1);
     expect(snaps[0]!.offer7d).toBe(1);
+    expect(snaps[0]!.uniqueOfferSenders1d).toBe(1);
+    expect(snaps[0]!.uniqueOfferSenders7d).toBe(1);
     expect(snaps[0]!.daysToEvent).toBe(daysUntil(party.eventAt, now));
     expect(snaps[0]!.computedAt).toEqual(now);
+  });
+
+  it("counts people per window, not just overall", async () => {
+    const { party, group, addSignal } = await seedUpcomingWithSignals();
+    // A second buyer, but from five days ago: inside 7d, outside 1d and 3d.
+    const older = await prisma.sender.create({
+      data: { waId: "s-old", name: "Caio" },
+    });
+    await addSignal({
+      waMessageId: "d3",
+      senderId: older.id,
+      sentAt: new Date(now.getTime() - 5 * 864e5),
+      type: "demand",
+      text: "procuro onix tambem",
+    });
+    expect(group).toBeDefined();
+
+    await refreshHeat(prisma, now);
+    const snap = await prisma.heatSnapshot.findFirstOrThrow({
+      where: { partyId: party.id },
+    });
+    expect(snap.uniqueDemandSenders1d).toBe(1);
+    expect(snap.uniqueDemandSenders7d).toBe(2);
   });
 
   it("keeps previous snapshots and latestSnapshot returns the newest", async () => {

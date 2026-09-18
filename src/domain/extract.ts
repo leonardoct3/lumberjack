@@ -181,6 +181,21 @@ function extractEventAt(text: string, now: Date): Date | null {
   return null;
 }
 
+/**
+ * Worth a row in the queue? "temos sem taxa e com desconto!" reads as an ad and
+ * extracts into nothing: no date, no price, no link. Confirming it would mean
+ * typing the festa from scratch, which the orphan queue already does better, so
+ * the message is kept classified and the queue is left alone.
+ */
+export function isActionableCandidate(candidate: ExtractedCandidate): boolean {
+  if (!candidate.name) return false;
+  return (
+    candidate.url != null ||
+    candidate.officialPrice != null ||
+    candidate.eventAt != null
+  );
+}
+
 export function extractCandidate(text: string, now: Date = new Date()): ExtractedCandidate {
   const urlMatch = text.match(URL_RE);
   const url = urlMatch ? urlMatch[0] : null;

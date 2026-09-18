@@ -15,6 +15,12 @@ import { formatWhen, toDatetimeLocal } from "@/lib/datetime";
 
 export const metadata: Metadata = { title: "Inbox de sinais" };
 
+/**
+ * A silenced sender asks for nothing: their messages stay in the history and
+ * out of every queue, or muting would only move the noise one list down.
+ */
+const NOT_MUTED = { sender: { muted: false } } as const;
+
 /** Copies of a cross-posted text ride along with their canonical message. */
 function orphanWhere(dismissed: boolean): Prisma.MessageWhereInput {
   return {
@@ -22,6 +28,7 @@ function orphanWhere(dismissed: boolean): Prisma.MessageWhereInput {
     signals: { none: {} },
     duplicateOfId: null,
     dismissedAt: dismissed ? { not: null } : null,
+    ...NOT_MUTED,
   };
 }
 
@@ -34,6 +41,7 @@ const unclassifiedWhere: Prisma.MessageWhereInput = {
   signals: { none: {} },
   duplicateOfId: null,
   dismissedAt: null,
+  ...NOT_MUTED,
   OR: TICKET_NOUNS.map((noun) => ({
     text: { contains: noun, mode: "insensitive" as const },
   })),
@@ -51,7 +59,7 @@ function groupReach(message: {
 export default async function InboxPage() {
   const [candidates, orphans, dismissed, unclassified, upcoming] = await Promise.all([
     prisma.partyCandidate.findMany({
-      where: { status: "pending" },
+      where: { status: "pending", source: NOT_MUTED },
       include: {
         source: { include: { duplicates: { select: { groupId: true } } } },
       },

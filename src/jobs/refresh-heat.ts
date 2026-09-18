@@ -1,6 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
 import { canRankOnHeat } from "@/domain/gates";
-import { computeHeatScore } from "@/domain/heat";
 import { daysUntil } from "@/domain/timezone";
 
 const MS_PER_DAY = 864e5;
@@ -23,6 +22,11 @@ function countInWindow<T extends { message: { sentAt: Date } }>(
   return signals.filter((s) => s.message.sentAt.getTime() >= cutoff);
 }
 
+/** The snapshot counts people, so cross-posting cannot inflate a window. */
+function countPeople<T extends { senderId: string }>(signals: T[]): number {
+  return new Set(signals.map((signal) => signal.senderId)).size;
+}
+
 export async function refreshHeat(
   db: PrismaClient,
   now: Date,
@@ -39,35 +43,26 @@ export async function refreshHeat(
       const demand = party.signals.filter((s) => s.type === "demand");
       const offer = party.signals.filter((s) => s.type === "offer");
 
-      const demand1d = countInWindow(demand, now, 1).length;
-      const demand3d = countInWindow(demand, now, 3).length;
-      const demand7dSignals = countInWindow(demand, now, 7);
-      const demand7d = demand7dSignals.length;
-      const uniqueDemandSenders7d = new Set(demand7dSignals.map((s) => s.senderId)).size;
-      const offer1d = countInWindow(offer, now, 1).length;
-      const offer3d = countInWindow(offer, now, 3).length;
-      const offer7d = countInWindow(offer, now, 7).length;
+      const demandIn = (days: number) => countInWindow(demand, now, days);
+      const offerIn = (days: number) => countInWindow(offer, now, days);
 
       await db.heatSnapshot.create({
         data: {
           partyId: party.id,
           computedAt: now,
-          demand1d,
-          demand3d,
-          demand7d,
-          offer1d,
-          offer3d,
-          offer7d,
-          uniqueDemandSenders7d,
+          demand1d: demandIn(1).length,
+          demand3d: demandIn(3).length,
+          demand7d: demandIn(7).length,
+          offer1d: offerIn(1).length,
+          offer3d: offerIn(3).length,
+          offer7d: offerIn(7).length,
+          uniqueDemandSenders1d: countPeople(demandIn(1)),
+          uniqueDemandSenders3d: countPeople(demandIn(3)),
+          uniqueDemandSenders7d: countPeople(demandIn(7)),
+          uniqueOfferSenders1d: countPeople(offerIn(1)),
+          uniqueOfferSenders3d: countPeople(offerIn(3)),
+          uniqueOfferSenders7d: countPeople(offerIn(7)),
           daysToEvent: daysUntil(party.eventAt, now),
-          score: computeHeatScore({
-            demand1d,
-            demand3d,
-            demand7d,
-            uniqueDemandSenders7d,
-            offer1d,
-            offer3d,
-          }),
         },
       });
       counted += 1;

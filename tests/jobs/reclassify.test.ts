@@ -202,6 +202,104 @@ describe("reclassifyMessages", () => {
     expect(await prisma.partyCandidate.count()).toBe(1);
   });
 
+  it("re-reads a pending candidate with the current extractor", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(
+      ids,
+      "a",
+      "*ONIX FESTIVAL - VIRADA DE LOTE 23:59* 31.12 https://www.sympla.com.br/onix",
+      "admin_promo",
+    );
+    // What an older extractor stored: the pitch instead of the festa.
+    const candidate = await prisma.partyCandidate.create({
+      data: {
+        status: "pending",
+        name: "VIRADA DE LOTE 23:59",
+        sourceMessageId: message.id,
+      },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.candidatesRefreshed).toBe(1);
+    expect(report.candidatesDropped).toBe(0);
+
+    const stored = await prisma.partyCandidate.findUniqueOrThrow({
+      where: { id: candidate.id },
+    });
+    expect(stored.name).toBe("ONIX FESTIVAL");
+    expect(stored.platform).toBe("sympla");
+  });
+
+  it("drops a pending candidate that has nothing to act on", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(ids, "a", "bom dia, chegou o lote", "admin_promo");
+    await prisma.partyCandidate.create({
+      data: { status: "pending", name: "bom dia, chegou o lote", sourceMessageId: message.id },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.candidatesDropped).toBe(1);
+    expect(await prisma.partyCandidate.count()).toBe(0);
+    // The message itself is untouched, so nothing is lost.
+    expect(await prisma.message.count({ where: { id: message.id } })).toBe(1);
+  });
+
+  it("does not re-read a candidate the operator already decided", async () => {
+    const ids = await seedBoard();
+    const message = await addMessage(
+      ids,
+      "a",
+      "*ONIX FESTIVAL* 31.12 https://www.sympla.com.br/onix",
+      "admin_promo",
+    );
+    await prisma.partyCandidate.create({
+      data: { status: "rejected", name: "qualquer coisa", sourceMessageId: message.id },
+    });
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.candidatesRefreshed).toBe(0);
+    expect(report.candidatesDropped).toBe(0);
+  });
+
+  it("leaves a silenced sender out of the queue entirely", async () => {
+    const ids = await seedBoard();
+    await prisma.sender.update({
+      where: { id: ids.sender.id },
+      data: { muted: true },
+    });
+    await addMessage(
+      ids,
+      "a",
+      "*ONIX FESTIVAL* 1º LOTE SEM TAXA R$180 https://www.sympla.com.br/evento/onix",
+      "ruido",
+    );
+    await addMessage(ids, "b", "compro 2 pista onix", "ruido");
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    // The classes still get fixed; only the queue work is skipped.
+    expect(report.becamePromo).toBe(1);
+    expect(report.becamePista).toBe(1);
+    expect(report.candidatesCreated).toBe(0);
+    expect(report.signalsCreated).toBe(0);
+    expect(await prisma.partyCandidate.count()).toBe(0);
+    expect(await prisma.signal.count()).toBe(0);
+  });
+
+  it("skips an ad that extracts into nothing to act on", async () => {
+    const ids = await seedBoard();
+    // One ad word is enough from a group admin, which is where this junk
+    // candidate came from in production.
+    await prisma.sender.update({
+      where: { id: ids.sender.id },
+      data: { role: "admin" },
+    });
+    await addMessage(ids, "a", "temos sem taxa e com desconto!", "ruido");
+
+    const report = await reclassifyMessages(prisma, { apply: true });
+    expect(report.becamePromo).toBe(1);
+    expect(report.candidatesCreated).toBe(0);
+  });
+
   it("does not resurrect a candidate the operator rejected", async () => {
     const ids = await seedBoard();
     const message = await addMessage(

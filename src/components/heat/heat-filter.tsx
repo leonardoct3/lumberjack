@@ -20,7 +20,7 @@ function label(group: HeatGroup): string {
 }
 
 export function HeatFilter(props: {
-  janela: 1 | 3 | 7 | null;
+  janela: 1 | 3 | 7;
   grupo: string;
   groups: HeatGroup[];
 }): JSX.Element {

@@ -5,8 +5,22 @@ import {
   type WatchlistItem,
 } from "@/components/watchlist/watchlist-board";
 import { prisma } from "@/db/client";
+import { computePressure } from "@/domain/heat";
 import { latestSnapshot } from "@/jobs/refresh-heat";
 import { countdownLabel } from "@/lib/datetime";
+
+/** Same reading as the heat map, over seven days: buyers per seller. */
+function pressureOf(
+  snapshot:
+    | { uniqueDemandSenders7d: number; uniqueOfferSenders7d: number }
+    | null,
+): number | null {
+  if (!snapshot) return null;
+  return computePressure({
+    uniqueDemandSenders: snapshot.uniqueDemandSenders7d,
+    uniqueOfferSenders: snapshot.uniqueOfferSenders7d,
+  });
+}
 
 export const metadata: Metadata = { title: "Fila de compra" };
 
@@ -30,7 +44,7 @@ export default async function WatchlistPage() {
       countdown: countdownLabel(eventAt, now),
       lotLabels: openLots.map((lot) => lot.label).filter(Boolean).join(", "),
       lotUrl: openLots.find((lot) => lot.url)?.url ?? null,
-      heat: latestSnapshot(party.heatSnapshots)?.score ?? null,
+      heat: pressureOf(latestSnapshot(party.heatSnapshots)),
       previousEdition: hasPreviousEdition(party, catalog),
       canMoveUp: index > 0,
       canMoveDown: index < parties.length - 1,

@@ -3,7 +3,11 @@ import { pathToFileURL } from "node:url";
 import type { MessageClass, PrismaClient, SignalType } from "@prisma/client";
 import { prisma } from "@/db/client";
 import { classifyMessage } from "@/domain/classify";
-import { extractCandidate } from "@/domain/extract";
+import {
+  type ExtractedCandidate,
+  extractCandidate,
+  isActionableCandidate,
+} from "@/domain/extract";
 import { matchParty } from "@/domain/match";
 import { refreshHeat } from "@/jobs/refresh-heat";
 
@@ -25,6 +29,10 @@ export type ReclassifyReport = {
   candidatesCreated: number;
   /** Candidates whose message stopped being a promo; left alone on purpose. */
   candidatesToReview: number;
+  /** Pending candidates re-read with the current extractor. */
+  candidatesRefreshed: number;
+  /** Pending candidates that no longer have a name and a way to buy. */
+  candidatesDropped: number;
 };
 
 type Plan = {
@@ -37,8 +45,37 @@ type Plan = {
     type: SignalType;
   }[];
   signalsToRetype: { id: string; type: SignalType }[];
-  candidatesToCreate: { messageId: string; text: string; sentAt: Date }[];
+  candidatesToCreate: { messageId: string; extracted: ExtractedCandidate }[];
+  candidatesToRefresh: { id: string; extracted: ExtractedCandidate }[];
+  candidatesToDrop: string[];
 };
+
+/**
+ * A pending candidate holds nothing but the extractor's reading of its message:
+ * the operator's edits live in the confirm form, never in this row. So a better
+ * extractor can re-read it, which is the only way the queue stops carrying the
+ * titles that an older version wrote.
+ */
+function candidateDiffers(
+  stored: {
+    name: string | null;
+    url: string | null;
+    lotLabel: string | null;
+    officialPrice: number | null;
+    eventAt: Date | null;
+    platform: string;
+  },
+  next: ExtractedCandidate,
+): boolean {
+  return (
+    stored.name !== next.name ||
+    stored.url !== next.url ||
+    stored.lotLabel !== next.lotLabel ||
+    stored.officialPrice !== next.officialPrice ||
+    stored.eventAt?.getTime() !== next.eventAt?.getTime() ||
+    stored.platform !== next.platform
+  );
+}
 
 const PISTA: MessageClass[] = ["pista_oferta", "pista_procura"];
 
@@ -79,9 +116,20 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
         partyId: true,
         duplicateOfId: true,
         sentAt: true,
-        sender: { select: { role: true } },
+        sender: { select: { role: true, muted: true } },
         signals: { select: { id: true, type: true } },
-        candidate: { select: { id: true } },
+        candidate: {
+          select: {
+            id: true,
+            status: true,
+            name: true,
+            url: true,
+            lotLabel: true,
+            officialPrice: true,
+            eventAt: true,
+            platform: true,
+          },
+        },
       },
     }),
     db.party.findMany({ where: { status: "upcoming" } }),
@@ -107,11 +155,15 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
       signalsToReview: 0,
       candidatesCreated: 0,
       candidatesToReview: 0,
+      candidatesRefreshed: 0,
+      candidatesDropped: 0,
     },
     classes: [],
     signalsToCreate: [],
     signalsToRetype: [],
     candidatesToCreate: [],
+    candidatesToRefresh: [],
+    candidatesToDrop: [],
   };
 
   for (const message of messages) {
@@ -131,16 +183,28 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
       if (next === "admin_promo") plan.report.becamePromo += 1;
     }
 
+    // Waiting candidates get re-read whatever the class says now, because the
+    // extractor moved too, and a stale title is what the operator sees first.
+    if (message.candidate?.status === "pending") {
+      const extracted = extractCandidate(message.text, message.sentAt);
+      if (!isActionableCandidate(extracted)) {
+        plan.candidatesToDrop.push(message.candidate.id);
+        plan.report.candidatesDropped += 1;
+      } else if (candidateDiffers(message.candidate, extracted)) {
+        plan.candidatesToRefresh.push({ id: message.candidate.id, extracted });
+        plan.report.candidatesRefreshed += 1;
+      }
+    }
+
     if (next === "admin_promo") {
       if (signal) plan.report.signalsToReview += 1;
       // A copy has no candidate of its own; the canonical message carries it.
-      if (!message.candidate && !message.duplicateOfId) {
-        plan.candidatesToCreate.push({
-          messageId: message.id,
-          text: message.text,
-          sentAt: message.sentAt,
-        });
-        plan.report.candidatesCreated += 1;
+      if (!message.candidate && !message.duplicateOfId && !message.sender.muted) {
+        const extracted = extractCandidate(message.text, message.sentAt);
+        if (isActionableCandidate(extracted)) {
+          plan.candidatesToCreate.push({ messageId: message.id, extracted });
+          plan.report.candidatesCreated += 1;
+        }
       }
       continue;
     }
@@ -161,8 +225,9 @@ async function planReclassify(db: PrismaClient): Promise<Plan> {
       continue;
     }
 
-    // A copy never produced a signal of its own; the canonical message carries it.
-    if (message.duplicateOfId) continue;
+    // A copy never produced a signal of its own; the canonical message carries
+    // it, and a silenced sender never produced one at all.
+    if (message.duplicateOfId || message.sender.muted) continue;
 
     const matched = matchParty(message.text, parties);
     if (!matched) continue;
@@ -203,8 +268,27 @@ async function applyPlan(db: PrismaClient, plan: Plan): Promise<void> {
     });
   }
 
-  for (const candidate of plan.candidatesToCreate) {
-    const extracted = extractCandidate(candidate.text, candidate.sentAt);
+  if (plan.candidatesToDrop.length > 0) {
+    await db.partyCandidate.deleteMany({
+      where: { id: { in: plan.candidatesToDrop } },
+    });
+  }
+
+  for (const { id, extracted } of plan.candidatesToRefresh) {
+    await db.partyCandidate.update({
+      where: { id },
+      data: {
+        name: extracted.name,
+        url: extracted.url,
+        lotLabel: extracted.lotLabel,
+        officialPrice: extracted.officialPrice,
+        eventAt: extracted.eventAt,
+        platform: extracted.platform,
+      },
+    });
+  }
+
+  for (const { messageId, extracted } of plan.candidatesToCreate) {
     await db.partyCandidate.create({
       data: {
         status: "pending",
@@ -214,7 +298,7 @@ async function applyPlan(db: PrismaClient, plan: Plan): Promise<void> {
         officialPrice: extracted.officialPrice,
         eventAt: extracted.eventAt,
         platform: extracted.platform,
-        sourceMessageId: candidate.messageId,
+        sourceMessageId: messageId,
       },
     });
   }

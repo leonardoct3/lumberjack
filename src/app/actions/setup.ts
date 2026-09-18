@@ -35,3 +35,17 @@ export async function actionSetSenderRole(formData: FormData) {
   await setSenderRole(id, roleRaw as SenderRole);
   revalidatePath("/setup");
 }
+
+/**
+ * Silencing is about what a sender's messages do, not about the sender, so past
+ * rows are left where they are: the operator can still reject the candidates
+ * already in the queue, and nothing already linked is taken away.
+ */
+export async function actionSetSenderMuted(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const muted = String(formData.get("muted") ?? "") === "1";
+  if (!id) return;
+  await prisma.sender.update({ where: { id }, data: { muted } });
+  revalidatePath("/setup");
+  revalidatePath("/inbox");
+}

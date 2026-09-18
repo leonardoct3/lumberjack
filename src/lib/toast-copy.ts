@@ -20,4 +20,6 @@ export const TOAST = {
   classified: "Classificada",
   merged: "Festas fundidas",
   discarded: "Festa descartada",
+  senderMuted: "Remetente silenciado",
+  senderUnmuted: "Remetente reativado",
 } as const;

@@ -62,9 +62,12 @@ function HeatValue({ heat }: { heat: number | null }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold text-primary tabular-nums">
+    <span
+      className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold text-primary tabular-nums"
+      title="Gente procurando por vendedor nos últimos 7 dias"
+    >
       <Flame className="size-3.5 fill-primary/20" aria-hidden="true" />
-      {heat}
+      {String(heat).replace(".", ",")}×
     </span>
   );
 }

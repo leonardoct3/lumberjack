@@ -77,7 +77,6 @@ async function snapshotOn(partyId: string) {
       offer7d: 0,
       uniqueDemandSenders7d: 1,
       daysToEvent: 38,
-      score: 10,
     },
   });
 }

@@ -123,6 +123,69 @@ describe("ingestRawMessage", () => {
     expect(await prisma.party.count()).toBe(0);
   });
 
+  it("an ad with nothing to act on does not open a candidate", async () => {
+    const r = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-empty-promo",
+        senderIsGroupAdmin: true,
+        text: "temos sem taxa e com desconto!",
+      }),
+    );
+
+    const message = await prisma.message.findUniqueOrThrow({
+      where: { id: r.messageId },
+    });
+    expect(message.class).toBe("admin_promo");
+    expect(await prisma.partyCandidate.count()).toBe(0);
+  });
+
+  it("a silenced sender opens no candidate and no signal", async () => {
+    const party = await prisma.party.create({
+      data: {
+        name: "ONIX",
+        aliases: ["onix"],
+        eventAt: new Date("2026-09-12T03:00:00Z"),
+        status: "upcoming",
+      },
+    });
+    await prisma.sender.create({
+      data: { waId: "s-quiet", name: "Cassi", role: "pista", muted: true },
+    });
+
+    const ad = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-quiet-promo",
+        senderWaId: "s-quiet",
+        text: "*ONIX* 1º LOTE SEM TAXA R$180 https://www.sympla.com.br/onix",
+      }),
+    );
+    const offer = await ingestRawMessage(
+      prisma,
+      baseInput({
+        waMessageId: "wa-quiet-offer",
+        senderWaId: "s-quiet",
+        text: "vendo 1 pista onix",
+      }),
+    );
+
+    // Stored and classified, so nothing is lost and nothing acts.
+    const stored = await prisma.message.findMany({
+      where: { id: { in: [ad.messageId, offer.messageId] } },
+      orderBy: { waMessageId: "asc" },
+    });
+    expect(stored.map((m) => m.class).sort()).toEqual([
+      "admin_promo",
+      "pista_oferta",
+    ]);
+    expect(await prisma.partyCandidate.count()).toBe(0);
+    expect(await prisma.signal.count()).toBe(0);
+    expect(
+      await prisma.message.count({ where: { partyId: party.id } }),
+    ).toBe(0);
+  });
+
   it("pista demand with a matching upcoming party creates a demand signal", async () => {
     const party = await prisma.party.create({
       data: {

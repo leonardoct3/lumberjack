@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractCandidate } from "@/domain/extract";
+import { extractCandidate, isActionableCandidate } from "@/domain/extract";
 
 const now = new Date("2026-09-03T15:00:00Z");
 
@@ -90,5 +90,37 @@ describe("extractCandidate", () => {
       eventAt: null,
       platform: "unknown",
     });
+  });
+});
+
+describe("isActionableCandidate", () => {
+  it("rejects an ad that extracts into nothing but its own words", () => {
+    expect(
+      isActionableCandidate(extractCandidate("temos sem taxa e com desconto!", now)),
+    ).toBe(false);
+  });
+
+  it("accepts a name with a link, a price or a date", () => {
+    const cases = [
+      "*ONIX* https://www.sympla.com.br/onix",
+      "*ONIX* pista R$180",
+      "*ONIX* 31.12",
+    ];
+    for (const text of cases) {
+      expect(isActionableCandidate(extractCandidate(text, now))).toBe(true);
+    }
+  });
+
+  it("rejects anything without a name", () => {
+    expect(
+      isActionableCandidate({
+        name: null,
+        url: "https://www.sympla.com.br/onix",
+        lotLabel: null,
+        officialPrice: 180,
+        eventAt: now,
+        platform: "sympla",
+      }),
+    ).toBe(false);
   });
 });

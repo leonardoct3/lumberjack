@@ -4,6 +4,8 @@ import type { JSX } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  BellOff,
+  BellRing,
   CircleAlert,
   Headphones,
   LogOut,
@@ -18,7 +20,11 @@ import {
   Wifi,
 } from "lucide-react";
 import { actionLogout } from "@/app/actions/auth";
-import { actionSetGroupListen, actionSetSenderRole } from "@/app/actions/setup";
+import {
+  actionSetGroupListen,
+  actionSetSenderMuted,
+  actionSetSenderRole,
+} from "@/app/actions/setup";
 import { GroupPicker } from "@/components/setup/group-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +53,55 @@ const ROLE_LABEL = {
   unknown: "Não classificado",
 } as const;
 
+type SetupSender = {
+  id: string;
+  name: string;
+  role: "admin" | "pista" | "unknown";
+  muted: boolean;
+};
+
+/**
+ * For the promoters whose posts are weekly agendas and guest lists: keep the
+ * history, stop the queue. Reads as the current state, not as a command, so
+ * "Silenciado" means it already is.
+ */
+function MuteToggle({
+  sender,
+  busy,
+  onToggle,
+}: {
+  sender: SetupSender;
+  busy: boolean;
+  onToggle: (formData: FormData) => void;
+}) {
+  function toggle() {
+    const fd = new FormData();
+    fd.set("id", sender.id);
+    fd.set("muted", sender.muted ? "0" : "1");
+    onToggle(fd);
+  }
+
+  return (
+    <Button
+      type="button"
+      variant={sender.muted ? "secondary" : "ghost"}
+      size="sm"
+      disabled={busy}
+      aria-busy={busy || undefined}
+      aria-pressed={sender.muted}
+      title={
+        sender.muted
+          ? "Voltar a abrir candidato e sinal deste remetente"
+          : "Parar de abrir candidato e sinal deste remetente"
+      }
+      onClick={toggle}
+    >
+      {sender.muted ? <BellOff /> : <BellRing />}
+      {sender.muted ? "Silenciado" : "Ativo"}
+    </Button>
+  );
+}
+
 export function SetupBoard(props: {
   connected: boolean;
   banner: SessionGuidance | null;
@@ -54,7 +109,7 @@ export function SetupBoard(props: {
   canLogout: boolean;
   listening: { id: string; name: string; waId: string }[];
   available: { id: string; name: string; waId: string }[];
-  senders: { id: string; name: string; role: "admin" | "pista" | "unknown" }[];
+  senders: SetupSender[];
 }): JSX.Element {
   const { connected, banner, qrDataUrl, canLogout, listening, available, senders } =
     props;
@@ -335,7 +390,7 @@ export function SetupBoard(props: {
         <SectionHeader
           title="Papéis dos remetentes"
           count={senders.length}
-          description="O papel ajuda o classificador a interpretar cada mensagem."
+          description="O papel ajuda o classificador a interpretar cada mensagem. Silenciar mantém o histórico, mas para de abrir candidato e sinal."
         />
         {senders.length === 0 ? (
           <EmptyState
@@ -352,6 +407,7 @@ export function SetupBoard(props: {
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Remetente</TableHead>
                     <TableHead>Papel atual</TableHead>
+                    <TableHead>Sinais</TableHead>
                     <TableHead className="text-right">Alterar papel</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -370,6 +426,20 @@ export function SetupBoard(props: {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">{ROLE_LABEL[sender.role]}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <MuteToggle
+                            sender={sender}
+                            busy={busy}
+                            onToggle={(fd) =>
+                              submit(
+                                `sender-${sender.id}`,
+                                actionSetSenderMuted,
+                                fd,
+                                sender.muted ? TOAST.senderUnmuted : TOAST.senderMuted,
+                              )
+                            }
+                          />
                         </TableCell>
                         <TableCell>
                           <form
@@ -410,6 +480,18 @@ export function SetupBoard(props: {
                         <p className="truncate font-semibold">{sender.name}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">{ROLE_LABEL[sender.role]}</p>
                       </div>
+                      <MuteToggle
+                        sender={sender}
+                        busy={busy}
+                        onToggle={(fd) =>
+                          submit(
+                            `sender-${sender.id}`,
+                            actionSetSenderMuted,
+                            fd,
+                            sender.muted ? TOAST.senderUnmuted : TOAST.senderMuted,
+                          )
+                        }
+                      />
                     </div>
                     <form
                       className="flex items-center gap-2"

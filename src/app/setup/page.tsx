@@ -41,6 +41,7 @@ export default async function SetupPage() {
           id: sender.id,
           name: sender.name ?? sender.waId,
           role: sender.role,
+          muted: sender.muted,
         }))}
       />
     </main>

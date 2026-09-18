@@ -5,7 +5,7 @@ import {
   fingerprintText,
   withinDedupeWindow,
 } from "@/domain/dedupe";
-import { extractCandidate } from "@/domain/extract";
+import { extractCandidate, isActionableCandidate } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
 
 export type RawMessageInput = {
@@ -100,20 +100,28 @@ export async function ingestRawMessage(
     return { created: true, messageId: message.id, duplicateOfId };
   }
 
+  // Silenced sender: the message is stored and classified, and that is all it
+  // does. Weekly agendas and guest lists never became a festa worth having.
+  if (sender.muted) {
+    return { created: true, messageId: message.id };
+  }
+
   if (messageClass === "admin_promo") {
     const extracted = extractCandidate(input.text, input.sentAt);
-    await db.partyCandidate.create({
-      data: {
-        status: "pending",
-        name: extracted.name,
-        url: extracted.url,
-        lotLabel: extracted.lotLabel,
-        officialPrice: extracted.officialPrice,
-        eventAt: extracted.eventAt,
-        platform: extracted.platform,
-        sourceMessageId: message.id,
-      },
-    });
+    if (isActionableCandidate(extracted)) {
+      await db.partyCandidate.create({
+        data: {
+          status: "pending",
+          name: extracted.name,
+          url: extracted.url,
+          lotLabel: extracted.lotLabel,
+          officialPrice: extracted.officialPrice,
+          eventAt: extracted.eventAt,
+          platform: extracted.platform,
+          sourceMessageId: message.id,
+        },
+      });
+    }
   }
 
   if (messageClass === "pista_oferta" || messageClass === "pista_procura") {
