@@ -20,6 +20,7 @@ import {
   type DismissedOrphan,
   type InboxOrphan,
 } from "@/components/inbox/orphan-list";
+import { MuteSenderButton } from "@/components/inbox/mute-sender-button";
 import { SimilarWarning } from "@/components/inbox/similar-warning";
 import {
   UnclassifiedList,
@@ -40,6 +41,8 @@ export type InboxCandidate = {
   id: string;
   sourceText: string;
   groupReach: number;
+  senderId: string;
+  senderName: string;
   name: string;
   eventAtLocal: string;
   lot: string;
@@ -134,9 +137,11 @@ export function InboxBoard(props: {
                   <Card key={candidate.id} className="gap-5 overflow-hidden p-0">
                     <div className="border-b border-border/70 bg-muted/25 px-5 py-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="flex items-center gap-2 font-mono text-[9px] font-semibold tracking-[0.1em] text-primary uppercase">
-                          <MessageSquareText className="size-3.5" />
-                          Mensagem fonte
+                        <p className="flex min-w-0 items-center gap-2 font-mono text-[9px] font-semibold tracking-[0.1em] text-primary uppercase">
+                          <MessageSquareText className="size-3.5 shrink-0" />
+                          {/* Who announced it, because that is what the mute
+                              button below acts on. */}
+                          <span className="truncate">{candidate.senderName}</span>
                         </p>
                         <span className="flex items-center gap-2">
                           <ReachBadge groups={candidate.groupReach} />
@@ -214,23 +219,33 @@ export function InboxBoard(props: {
                         <Label htmlFor={`url-${candidate.id}`}>Link de venda</Label>
                         <Input id={`url-${candidate.id}`} name="url" type="url" defaultValue={candidate.url} placeholder="https://" disabled={busy} aria-busy={busy || undefined} />
                       </div>
-                      <div className="flex flex-col-reverse gap-2 border-t border-border/65 pt-4 sm:flex-row sm:justify-end">
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          disabled={busy}
-                          aria-busy={busy || undefined}
-                          onClick={() => {
-                            const fd = new FormData();
-                            fd.set("candidateId", candidate.id);
-                            submit(candidate.id, actionRejectCandidate, fd, TOAST.rejected);
-                          }}
-                        >
-                          <Trash2 /> Rejeitar
-                        </Button>
-                        <Button type="submit" disabled={busy} aria-busy={busy || undefined}>
-                          <Check /> Confirmar festa
-                        </Button>
+                      <div className="flex flex-col-reverse gap-2 border-t border-border/65 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        {/* Rejecting clears one card; silencing clears every
+                            card this sender would ever open. */}
+                        <MuteSenderButton
+                          senderId={candidate.senderId}
+                          senderName={candidate.senderName}
+                          busy={busy || pendingIds.has(candidate.senderId)}
+                          submit={submit}
+                        />
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={busy}
+                            aria-busy={busy || undefined}
+                            onClick={() => {
+                              const fd = new FormData();
+                              fd.set("candidateId", candidate.id);
+                              submit(candidate.id, actionRejectCandidate, fd, TOAST.rejected);
+                            }}
+                          >
+                            <Trash2 /> Rejeitar
+                          </Button>
+                          <Button type="submit" disabled={busy} aria-busy={busy || undefined}>
+                            <Check /> Confirmar festa
+                          </Button>
+                        </div>
                       </div>
                     </form>
                   </Card>

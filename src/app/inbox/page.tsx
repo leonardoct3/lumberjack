@@ -61,7 +61,9 @@ export default async function InboxPage() {
     prisma.partyCandidate.findMany({
       where: { status: "pending", source: NOT_MUTED },
       include: {
-        source: { include: { duplicates: { select: { groupId: true } } } },
+        source: {
+          include: { sender: true, duplicates: { select: { groupId: true } } },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -99,6 +101,8 @@ export default async function InboxPage() {
     id: candidate.id,
     sourceText: candidate.source.text,
     groupReach: groupReach(candidate.source),
+    senderId: candidate.source.senderId,
+    senderName: candidate.source.sender.name ?? candidate.source.sender.waId,
     name: candidate.name ?? "",
     eventAtLocal: candidate.eventAt
       ? toDatetimeLocal(candidate.eventAt.toISOString())
@@ -135,6 +139,7 @@ export default async function InboxPage() {
   const mappedUnclassified: UnclassifiedMessage[] = unclassified.map((message) => ({
     id: message.id,
     text: message.text,
+    senderId: message.senderId,
     sender: message.sender.name ?? message.sender.waId,
     sentAtLabel: formatWhen(message.sentAt.toISOString()),
   }));

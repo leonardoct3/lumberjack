@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { useState } from "react";
 import { HandCoins, HelpCircle, Tag } from "lucide-react";
 import { actionReclassifyMessage } from "@/app/actions/catalog";
+import { MuteSenderButton } from "@/components/inbox/mute-sender-button";
 import { Button } from "@/components/ui/button";
 import { TOAST } from "@/lib/toast-copy";
 import { useRowActions } from "./use-row-actions";
@@ -11,6 +12,7 @@ import { useRowActions } from "./use-row-actions";
 export type UnclassifiedMessage = {
   id: string;
   text: string;
+  senderId: string;
   sender: string;
   sentAtLabel: string;
 };
@@ -90,6 +92,15 @@ export function UnclassifiedList({
                 >
                   <Tag /> É oferta
                 </Button>
+                {/* The third answer to "what is this": nothing, and never
+                    again from this sender. */}
+                <MuteSenderButton
+                  senderId={message.senderId}
+                  senderName={message.sender}
+                  busy={busy || pendingIds.has(message.senderId)}
+                  submit={submit}
+                  compact
+                />
               </span>
             </li>
           );

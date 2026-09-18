@@ -4,28 +4,20 @@ import type { JSX } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
-  BellOff,
-  BellRing,
   CircleAlert,
   Headphones,
   LogOut,
   Pause,
   QrCode,
   Radio,
-  Save,
   Settings2,
-  ShieldCheck,
-  UserRoundCog,
   UsersRound,
   Wifi,
 } from "lucide-react";
 import { actionLogout } from "@/app/actions/auth";
-import {
-  actionSetGroupListen,
-  actionSetSenderMuted,
-  actionSetSenderRole,
-} from "@/app/actions/setup";
+import { actionSetGroupListen, actionSetSenderMuted } from "@/app/actions/setup";
 import { GroupPicker } from "@/components/setup/group-picker";
+import { SenderList, type SetupSender } from "@/components/setup/sender-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -44,63 +36,6 @@ import { duplicateNames, shortWaId } from "@/lib/group-search";
 import { runAction } from "@/lib/run-action";
 import { TOAST } from "@/lib/toast-copy";
 
-const selectClassName =
-  "h-10 w-full max-w-52 rounded-[10px] border border-input bg-background/55 px-3.5 text-sm outline-none transition-colors hover:border-muted-foreground/45 focus:border-ring focus:ring-3 focus:ring-ring/12";
-
-const ROLE_LABEL = {
-  admin: "Administrador",
-  pista: "Pista",
-  unknown: "Não classificado",
-} as const;
-
-type SetupSender = {
-  id: string;
-  name: string;
-  role: "admin" | "pista" | "unknown";
-  muted: boolean;
-};
-
-/**
- * For the promoters whose posts are weekly agendas and guest lists: keep the
- * history, stop the queue. Reads as the current state, not as a command, so
- * "Silenciado" means it already is.
- */
-function MuteToggle({
-  sender,
-  busy,
-  onToggle,
-}: {
-  sender: SetupSender;
-  busy: boolean;
-  onToggle: (formData: FormData) => void;
-}) {
-  function toggle() {
-    const fd = new FormData();
-    fd.set("id", sender.id);
-    fd.set("muted", sender.muted ? "0" : "1");
-    onToggle(fd);
-  }
-
-  return (
-    <Button
-      type="button"
-      variant={sender.muted ? "secondary" : "ghost"}
-      size="sm"
-      disabled={busy}
-      aria-busy={busy || undefined}
-      aria-pressed={sender.muted}
-      title={
-        sender.muted
-          ? "Voltar a abrir candidato e sinal deste remetente"
-          : "Parar de abrir candidato e sinal deste remetente"
-      }
-      onClick={toggle}
-    >
-      {sender.muted ? <BellOff /> : <BellRing />}
-      {sender.muted ? "Silenciado" : "Ativo"}
-    </Button>
-  );
-}
 
 export function SetupBoard(props: {
   connected: boolean;
@@ -109,10 +44,19 @@ export function SetupBoard(props: {
   canLogout: boolean;
   listening: { id: string; name: string; waId: string }[];
   available: { id: string; name: string; waId: string }[];
+  windowDays: number;
   senders: SetupSender[];
 }): JSX.Element {
-  const { connected, banner, qrDataUrl, canLogout, listening, available, senders } =
-    props;
+  const {
+    connected,
+    banner,
+    qrDataUrl,
+    canLogout,
+    listening,
+    available,
+    windowDays,
+    senders,
+  } = props;
   const duplicates = useMemo(
     () => duplicateNames([...listening, ...available]),
     [listening, available],
@@ -150,7 +94,9 @@ export function SetupBoard(props: {
   }
 
   const totalGroups = listening.length + available.length;
-  const classified = senders.filter((sender) => sender.role !== "unknown").length;
+  // "Classificados" counted a role nobody needed to declare; what matters is
+  // how many contacts are actually producing something to triage.
+  const active = senders.filter((sender) => sender.messages > 0).length;
 
   function pause(group: { id: string; name: string }) {
     const fd = new FormData();
@@ -219,8 +165,8 @@ export function SetupBoard(props: {
           <p className="mt-2 font-mono text-xl font-semibold text-primary tabular-nums md:text-2xl">{String(listening.length).padStart(2, "0")}</p>
         </div>
         <div className="p-4 md:p-5">
-          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Classificados</p>
-          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(classified).padStart(2, "0")}</p>
+          <p className="font-mono text-[9px] tracking-[0.11em] text-muted-foreground uppercase">Remetentes ativos</p>
+          <p className="mt-2 font-mono text-xl font-semibold tabular-nums md:text-2xl">{String(active).padStart(2, "0")}</p>
         </div>
       </div>
 
@@ -386,137 +332,22 @@ export function SetupBoard(props: {
         )}
       </section>
 
-      <section className="space-y-4">
-        <SectionHeader
-          title="Papéis dos remetentes"
-          count={senders.length}
-          description="O papel ajuda o classificador a interpretar cada mensagem. Silenciar mantém o histórico, mas para de abrir candidato e sinal."
-        />
-        {senders.length === 0 ? (
-          <EmptyState
-            title="Nenhum remetente"
-            description="Novos contatos aparecem quando mensagens forem sincronizadas."
-            icon={UserRoundCog}
-            compact
-          />
-        ) : (
-          <Card className="overflow-hidden p-0">
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Remetente</TableHead>
-                    <TableHead>Papel atual</TableHead>
-                    <TableHead>Sinais</TableHead>
-                    <TableHead className="text-right">Alterar papel</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {senders.map((sender) => {
-                    const busy = pendingIds.has(`sender-${sender.id}`);
-                    return (
-                      <TableRow key={sender.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <span className="grid size-9 place-items-center rounded-xl border border-border bg-background/40 text-muted-foreground">
-                              {sender.role === "admin" ? <ShieldCheck className="size-4" /> : <UserRoundCog className="size-4" />}
-                            </span>
-                            <span className="font-semibold">{sender.name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{ROLE_LABEL[sender.role]}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <MuteToggle
-                            sender={sender}
-                            busy={busy}
-                            onToggle={(fd) =>
-                              submit(
-                                `sender-${sender.id}`,
-                                actionSetSenderMuted,
-                                fd,
-                                sender.muted ? TOAST.senderUnmuted : TOAST.senderMuted,
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <form
-                            className="flex items-center justify-end gap-2"
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              submit(`sender-${sender.id}`, actionSetSenderRole, new FormData(event.currentTarget), TOAST.saved);
-                            }}
-                          >
-                            <input type="hidden" name="id" value={sender.id} />
-                            <select name="role" defaultValue={sender.role} className={selectClassName} disabled={busy} aria-busy={busy || undefined}>
-                              <option value="admin">Administrador</option>
-                              <option value="pista">Pista</option>
-                              <option value="unknown">Não classificado</option>
-                            </select>
-                            <Button type="submit" variant="outline" size="sm" disabled={busy} aria-busy={busy || undefined}>
-                              <Save /> Salvar
-                            </Button>
-                          </form>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-
-            <ul className="divide-y divide-border/70 md:hidden">
-              {senders.map((sender) => {
-                const busy = pendingIds.has(`sender-${sender.id}`);
-                return (
-                  <li key={sender.id} className="p-4">
-                    <div className="mb-4 flex items-center gap-3">
-                      <span className="grid size-9 place-items-center rounded-xl border border-border bg-background/40 text-muted-foreground">
-                        <UserRoundCog className="size-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold">{sender.name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{ROLE_LABEL[sender.role]}</p>
-                      </div>
-                      <MuteToggle
-                        sender={sender}
-                        busy={busy}
-                        onToggle={(fd) =>
-                          submit(
-                            `sender-${sender.id}`,
-                            actionSetSenderMuted,
-                            fd,
-                            sender.muted ? TOAST.senderUnmuted : TOAST.senderMuted,
-                          )
-                        }
-                      />
-                    </div>
-                    <form
-                      className="flex items-center gap-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submit(`sender-${sender.id}`, actionSetSenderRole, new FormData(event.currentTarget), TOAST.saved);
-                      }}
-                    >
-                      <input type="hidden" name="id" value={sender.id} />
-                      <select name="role" defaultValue={sender.role} className={`${selectClassName} max-w-none flex-1`} disabled={busy} aria-busy={busy || undefined}>
-                        <option value="admin">Administrador</option>
-                        <option value="pista">Pista</option>
-                        <option value="unknown">Não classificado</option>
-                      </select>
-                      <Button type="submit" variant="outline" size="sm" disabled={busy} aria-busy={busy || undefined}>
-                        <Save /> Salvar
-                      </Button>
-                    </form>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
-        )}
-      </section>
+      <SenderList
+        senders={senders}
+        windowDays={windowDays}
+        isBusy={(id) => pendingIds.has(`sender-${id}`)}
+        onToggleMute={(sender) => {
+          const fd = new FormData();
+          fd.set("id", sender.id);
+          fd.set("muted", sender.muted ? "0" : "1");
+          submit(
+            `sender-${sender.id}`,
+            actionSetSenderMuted,
+            fd,
+            sender.muted ? TOAST.senderUnmuted : TOAST.senderMuted,
+          );
+        }}
+      />
 
       <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/25 px-4 py-3 text-xs leading-5 text-muted-foreground">
         <Radio className="mt-0.5 size-3.5 shrink-0 text-primary" />
