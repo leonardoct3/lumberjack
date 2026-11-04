@@ -89,6 +89,10 @@ model Message {
   signals      Signal[]
   createdAt    DateTime @default(now())
 
+  processingJobs     ProcessingJob[]
+  interpretationRuns InterpretationRun[]
+  observations       Observation[]
+
   /** Operator sent this orphan away without linking it; keeps the Inbox drainable. */
   dismissedAt  DateTime?
 
@@ -195,6 +199,142 @@ enum WaState {
   connected
   qr
   disconnected
+}
+
+enum ProcessingStage {
+  interpret
+}
+
+enum JobStatus {
+  pending
+  running
+  succeeded
+  dead
+}
+
+/** Why a job or run failed; unresolved ambiguity is a result, never a failure. */
+enum FailureKind {
+  transient
+  timeout
+  schema
+  refusal
+  budget
+  internal
+}
+
+enum RunStatus {
+  succeeded
+  failed
+}
+
+enum ObservationIntent {
+  demand
+  offer
+  promotion
+  update
+  withdrawal_claim
+  unrelated
+  unresolved
+}
+
+/**
+ * Durable work for the shadow pipeline. Capture writes the job with the message,
+ * so a provider outage delays interpretation but never loses a message.
+ */
+model ProcessingJob {
+  id              String          @id @default(cuid())
+  stage           ProcessingStage
+  message         Message         @relation(fields: [messageId], references: [id])
+  messageId       String
+  /** Stage, message and pipeline version: a redelivered message never queues twice. */
+  idempotencyKey  String          @unique
+  pipelineVersion String
+  status          JobStatus       @default(pending)
+  attempts        Int             @default(0)
+  maxAttempts     Int             @default(5)
+  runAfter        DateTime        @default(now())
+  leaseOwner      String?
+  leaseExpiresAt  DateTime?
+  lastErrorKind   FailureKind?
+  lastError       String?
+  /** The run whose output this job accepted, possibly reused from an identical earlier run. */
+  resultRun       InterpretationRun?  @relation("JobResult", fields: [resultRunId], references: [id])
+  resultRunId     String?
+  runs            InterpretationRun[] @relation("JobRuns")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  completedAt     DateTime?
+
+  @@index([status, runAfter])
+  @@index([messageId])
+}
+
+/**
+ * One call to an interpreter, kept whether it succeeded or not. A new model or
+ * prompt version writes a new run; earlier runs are never rewritten.
+ */
+model InterpretationRun {
+  id                 String          @id @default(cuid())
+  job                ProcessingJob?  @relation("JobRuns", fields: [jobId], references: [id])
+  jobId              String?
+  acceptedBy         ProcessingJob[] @relation("JobResult")
+  message            Message         @relation(fields: [messageId], references: [id])
+  messageId          String
+  stage              ProcessingStage
+  pipelineVersion    String
+  interpreter        String
+  interpreterVersion String
+  provider           String?
+  model              String?
+  promptVersion      String?
+  schemaVersion      Int
+  inputHash          String
+  contextHash        String
+  status             RunStatus
+  failureKind        FailureKind?
+  error              String?
+  inputTokens        Int?
+  outputTokens       Int?
+  costUsd            Float?
+  latencyMs          Int
+  /** The validated output, as returned, for diagnosis and replay. */
+  result             Json?
+  observations       Observation[]
+  createdAt          DateTime        @default(now())
+
+  @@index([messageId, stage])
+  @@index([stage, inputHash, contextHash, interpreter, interpreterVersion])
+  @@index([createdAt])
+}
+
+/** An assertion a run read in a message. Accepted facts are a separate projection. */
+model Observation {
+  id               String            @id @default(cuid())
+  run              InterpretationRun @relation(fields: [runId], references: [id])
+  runId            String
+  message          Message           @relation(fields: [messageId], references: [id])
+  messageId        String
+  position         Int
+  intent           ObservationIntent
+  eventMention     String?
+  ticketCategory   String?
+  quantity         Int?
+  priceAmount      Float?
+  priceCurrency    String?
+  priceMeaning     String?
+  eventYear        Int?
+  eventMonth       Int?
+  eventDay         Int?
+  dateBasis        String?
+  /** `[{ start, end, text }]` offsets into the message text, checked before storing. */
+  spans            Json
+  relationshipKind String?
+  relatedMessageId String?
+  ambiguities      String[]
+  createdAt        DateTime          @default(now())
+
+  @@unique([runId, position])
+  @@index([messageId])
 }
 
 /** Singleton row (`id = "wa"`) shared by the web board and the connector process. */

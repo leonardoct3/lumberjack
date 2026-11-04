@@ -11,7 +11,7 @@
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "format:check": "prettier --check .prettierrc.json eslint.config.mjs playwright.config.ts package.json src/auth/session.ts src/features/inbox/queries.ts src/lib/{clock,current-wa-status,form}.ts src/components/ui/{native-select,reach-badge,stat-grid}.tsx src/app/{error,loading,not-found}.tsx src/app/globals.css src/app/actions/{catalog,party,setup,watchlist}.ts src/app/{heat,inbox,setup,watchlist}/page.tsx src/app/page.tsx src/app/parties/[id]/page.tsx src/catalog/watchlist.ts src/components/{inbox/inbox-board,inbox/orphan-list,setup/setup-board,shell/app-shell,shell/sidebar-context,ui/button,ui/card,watchlist/watchlist-board}.tsx tests/e2e/{operator-workflow.spec,support}.ts src/benchmark src/jobs/benchmark.ts tests/benchmark tests/inbox/queries.test.ts tests/lib/form.test.ts",
+    "format:check": "prettier --check .prettierrc.json eslint.config.mjs playwright.config.ts package.json src/auth/session.ts src/features/inbox/queries.ts src/lib/{clock,current-wa-status,form}.ts src/components/ui/{native-select,reach-badge,stat-grid}.tsx src/app/{error,loading,not-found}.tsx src/app/globals.css src/app/actions/{catalog,party,setup,watchlist}.ts src/app/{heat,inbox,setup,watchlist}/page.tsx src/app/page.tsx src/app/parties/[id]/page.tsx src/catalog/watchlist.ts src/components/{inbox/inbox-board,inbox/orphan-list,setup/setup-board,shell/app-shell,shell/sidebar-context,ui/button,ui/card,watchlist/watchlist-board}.tsx tests/e2e/{operator-workflow.spec,support}.ts src/benchmark src/jobs/benchmark.ts tests/benchmark src/pipeline src/jobs/pipeline.ts tests/pipeline tests/inbox/queries.test.ts tests/lib/form.test.ts",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
     "test": "tsc --noEmit && vitest run",
     "test:watch": "vitest",
@@ -26,6 +26,7 @@
     "db:dedupe": "tsx src/jobs/backfill-dedupe.ts",
     "db:reclassify": "tsx src/jobs/reclassify.ts",
     "bench": "tsx src/jobs/benchmark.ts",
+    "pipeline": "tsx src/jobs/pipeline.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:demo": "tsx prisma/demo.ts"
   },

@@ -78,6 +78,27 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 | `npm run test:e2e` | Set up the E2E database and run Playwright workflows (requires Playwright browsers) |
 | `npm run verify` | Check formatting, linting, types, Vitest, and a production build |
 | `npm run bench -- <command>` | Benchmark tooling: `inventory`, `export`, `sample`, `baseline`, `schema` (see below) |
+| `npm run pipeline -- <command>` | Shadow interpretation: `status`, `enqueue --from --to`, `run` (see below) |
+
+## Shadow interpretation
+
+A second reading of each message, written beside the board and read by nobody but evaluation: the board, catalog, candidates and signals stay exactly what the rules make them. Everything is off until `PIPELINE_INTERPRET=shadow` is set on both the connector and the worker.
+
+- **Capture.** With the flag on, the connector stores each canonical message together with its interpretation job, in one write; a redelivered message keeps its one job (`ProcessingJob.idempotencyKey` is the stage, WhatsApp id and `PIPELINE_VERSION`). Cross-post copies and muted senders are not queued. A bad flag is logged and capture goes on without queueing.
+- **Work.** Each hourly worker run, after the heat refresh, takes jobs one at a time under a lease (`FOR UPDATE SKIP LOCKED`), so two workers never share a job and a job whose worker died is taken back when its lease runs out. A result counts only if it is committed while the lease is still held.
+- **Failures.** Every call becomes an `InterpretationRun`, failed or not. Outages, timeouts and provider quota are retried with backoff (30 s doubling, at most 1 h); malformed output is tried twice; a refusal or an internal error goes straight to the dead letters (`status: dead`). Output is stored as `Observation` rows only after it passes the same evidence checks as human labels.
+- **Cost.** An identical earlier run (same message, input and context hashes, interpreter, prompt and schema versions) is reused instead of called again. Paid interpreters stop for the day at `PIPELINE_DAILY_BUDGET_USD` (default 0, so nothing is spent until a budget is set), and a pass makes at most `PIPELINE_MAX_CALLS_PER_PASS` calls. The only interpreter today is `rules`: the current classifier, matcher and extractor, free, so the whole path runs without a provider.
+- **Operating it.** `status` prints counts and timestamps only: capture freshness, backlog, expired leases, the oldest waiting job, dead letters by cause and today's spend. `enqueue` queues stored messages that were captured with the flag off (São Paulo days, `--to` exclusive); running it twice queues nothing new. `run` is one worker pass.
+
+| Variable | Default | |
+|---|---|---|
+| `PIPELINE_INTERPRET` | `off` | `off` or `shadow` |
+| `PIPELINE_RESOLVE`, `PIPELINE_PROJECTION`, `PIPELINE_RECOMMENDATIONS` | `off` | Stages not built yet; any other value is refused |
+| `PIPELINE_INTERPRETER` | `rules` | |
+| `PIPELINE_MAX_CALLS_PER_PASS` | `50` | |
+| `PIPELINE_DAILY_BUDGET_USD` | `0` | Since São Paulo midnight, failed calls included |
+| `PIPELINE_LEASE_MS` | `300000` | |
+| `PIPELINE_CALL_TIMEOUT_MS` | `60000` | |
 
 ## Benchmark data
 

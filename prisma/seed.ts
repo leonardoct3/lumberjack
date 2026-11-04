@@ -61,6 +61,9 @@ async function resetFixture(db: PrismaClient): Promise<void> {
   await db.signal.deleteMany();
   await db.lot.deleteMany();
   await db.partyCandidate.deleteMany();
+  await db.observation.deleteMany();
+  await db.processingJob.deleteMany();
+  await db.interpretationRun.deleteMany();
   await db.message.deleteMany();
   await db.party.deleteMany();
   await db.sender.deleteMany();
