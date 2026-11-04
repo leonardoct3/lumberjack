@@ -77,6 +77,19 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 | `npm test` | `tsc --noEmit` + Vitest (serial files, against `lumberjack_test`) |
 | `npm run test:e2e` | Set up the E2E database and run Playwright workflows (requires Playwright browsers) |
 | `npm run verify` | Check formatting, linting, types, Vitest, and a production build |
+| `npm run bench -- <command>` | Benchmark tooling: `inventory`, `export`, `sample`, `baseline`, `schema` (see below) |
+
+## Benchmark data
+
+Tooling for measuring the current rules against labelled real messages. It only ever reads production, inside a Postgres read-only repeatable-read transaction, and writes nothing to the repository: every output path and the pseudonym key must live outside it (the commands refuse otherwise).
+
+- **Key.** `BENCH_PSEUDONYM_KEY_FILE` points at a random key (`openssl rand -hex 32`) that turns group, sender and message ids into stable pseudonyms. Keep it out of the repository and out of model context; the manifest records only its fingerprint.
+- **Reaching production.** Postgres is private to Railway. With an SSH key registered (`railway ssh keys add`), `railway connect Postgres --tunnel-only -P 15432` opens a local tunnel; run the commands under `railway run -s Postgres` with `DATABASE_URL` rewritten to `127.0.0.1:15432`, without printing it.
+- **`inventory --out FILE`** Aggregates only: counts, coverage by São Paulo day, ingestion delay, schema and migration drift, connector state. No text or names.
+- **`export --from --to --out DIR`** The interval (São Paulo days, `--to` exclusive) plus `--context-days` before it, the catalog, candidates, signals and heat snapshots, as JSONL with a manifest of checksums and limitations. Text is redacted (phones, emails, documents, PIX keys, tracking parameters, known push names); `WaSession` and WhatsApp ids are never exported.
+- **`sample --export DIR --seed ...`** A reproducible random set of duplicate families with inclusion probabilities, a challenge set picked per heuristic tag, and chronological development / calibration / test splits that set aside boundary families and reused templates.
+- **`baseline --export DIR --out DIR [--sample DIR] [--gold FILE]`** Replays the classifier, matcher and extractor, both against the catalog as it stood at each message (online) and with hindsight (retrospective). With human gold labels it reports per-intent precision/recall with Wilson intervals and link precision/coverage, separately for the random set, the challenge set and the held-out test split.
+- **`schema`** Prints the annotation JSON Schema, also kept at `docs/benchmark/annotation.schema.json`. Spans must quote the message exactly, missing years stay null, and only `source: "human"` labels are scored.
 
 ## UI
 
