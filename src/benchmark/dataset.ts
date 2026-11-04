@@ -12,11 +12,23 @@ export type ExportedCandidate = {
   name: string | null;
 };
 
+export type ExportedLot = {
+  id: string;
+  partyId: string;
+  label: string;
+  openedAt: string;
+  closedAt: string | null;
+  officialPrice: number | null;
+  url: string | null;
+  platform: string;
+};
+
 export type LoadedExport = {
   dir: string;
   manifest: ExportManifest;
   messages: ExportedMessage[];
   parties: ExportedParty[];
+  lots: ExportedLot[];
   candidates: ExportedCandidate[];
 };
 
@@ -61,6 +73,7 @@ export function loadExport(dir: string): LoadedExport {
     manifest,
     messages: load<ExportedMessage>("messages.jsonl"),
     parties: load<ExportedParty>("parties.jsonl"),
+    lots: load<ExportedLot>("lots.jsonl"),
     candidates: load<ExportedCandidate>("candidates.jsonl"),
   };
 }

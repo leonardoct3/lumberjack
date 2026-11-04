@@ -77,7 +77,7 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 | `npm test` | `tsc --noEmit` + Vitest (serial files, against `lumberjack_test`) |
 | `npm run test:e2e` | Set up the E2E database and run Playwright workflows (requires Playwright browsers) |
 | `npm run verify` | Check formatting, linting, types, Vitest, and a production build |
-| `npm run bench -- <command>` | Benchmark tooling: `inventory`, `export`, `sample`, `baseline`, `schema` (see below) |
+| `npm run bench -- <command>` | Benchmark tooling: `inventory`, `export`, `sample`, `baseline`, `label`, `schema` (see below) |
 | `npm run pipeline -- <command>` | Shadow interpretation: `status`, `enqueue --from --to`, `run` (see below) |
 
 ## Shadow interpretation
@@ -110,6 +110,11 @@ Tooling for measuring the current rules against labelled real messages. It only 
 - **`export --from --to --out DIR`** The interval (São Paulo days, `--to` exclusive) plus `--context-days` before it, the catalog, candidates, signals and heat snapshots, as JSONL with a manifest of checksums and limitations. Text is redacted (phones, emails, documents, PIX keys, tracking parameters, known push names); `WaSession` and WhatsApp ids are never exported.
 - **`sample --export DIR --seed ...`** A reproducible random set of duplicate families with inclusion probabilities, a challenge set picked per heuristic tag, and chronological development / calibration / test splits that set aside boundary families and reused templates.
 - **`baseline --export DIR --out DIR [--sample DIR] [--gold FILE]`** Replays the classifier, matcher and extractor, both against the catalog as it stood at each message (online) and with hindsight (retrospective). With human gold labels it reports per-intent precision/recall with Wilson intervals and link precision/coverage, separately for the random set, the challenge set and the held-out test split.
+- **`label --export DIR --sample DIR --annotator ID [--port 4319]`** A blind labelling page on `127.0.0.1`, opened with the tokenised URL it prints.
+  - **What you see.** Each sampled message, the same group's messages from the previous 24 hours and the same sender's from the previous 7 days (earlier messages only), and the catalog as it stood at that moment. It never shows the rules' class or link.
+  - **Spans.** Select text in the message to add a span; the offsets are computed for you.
+  - **Saving.** Every save is checked with the same validator the benchmark scores, then appended to `<sample>/labels/<annotator>.jsonl` (mode 600). The latest line per message wins, and `baseline --gold` reads it that way.
+  - **Annotator.** `ID` is a pseudonym, never a real name.
 - **`schema`** Prints the annotation JSON Schema, also kept at `docs/benchmark/annotation.schema.json`. Spans must quote the message exactly, missing years stay null, and only `source: "human"` labels are scored.
 
 ## UI

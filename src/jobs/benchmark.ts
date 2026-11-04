@@ -20,6 +20,9 @@ import {
 import { loadExport, readJsonl } from "@/benchmark/dataset";
 import { exportDataset } from "@/benchmark/export";
 import { buildInventory } from "@/benchmark/inventory";
+import type { LabelItem } from "@/benchmark/label/item";
+import { startLabelServer } from "@/benchmark/label/server";
+import { createLabelStore, latestAnnotations } from "@/benchmark/labels";
 import { createPseudonymizer } from "@/benchmark/pseudonymize";
 import { withReadOnlySnapshot } from "@/benchmark/read-only";
 import {
@@ -42,6 +45,7 @@ const USAGE = `Usage: npm run bench -- <command> [options]
   sample    --export DIR --seed SEED --calibration-from YYYY-MM-DD --test-from YYYY-MM-DD
             [--random-size 300] [--per-tag 15]
   baseline  --export DIR --out DIR [--sample DIR] [--gold FILE]
+  label     --export DIR --sample DIR --annotator ID [--port 4319]
   schema
 
 Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.`;
@@ -306,7 +310,8 @@ async function baseline(): Promise<void> {
     const texts = new Map(data.messages.map((m) => [m.id, m.text]));
     const valid: Annotation[] = [];
     const invalid: { messageId: unknown; errors: string[] }[] = [];
-    for (const raw of readJsonl<{ messageId?: unknown }>(assertOutsideRepo(goldFile))) {
+    const records = readJsonl<{ messageId?: unknown }>(assertOutsideRepo(goldFile));
+    for (const raw of latestAnnotations(records)) {
       const text =
         typeof raw.messageId === "string" ? texts.get(raw.messageId) : undefined;
       if (text == null) {
@@ -378,11 +383,50 @@ async function baseline(): Promise<void> {
   console.error(`wrote ${outDir}`);
 }
 
+/** Blind labelling on loopback: the page never shows what the rules decided. */
+async function label(): Promise<void> {
+  const exportDir = assertOutsideRepo(required("--export"));
+  const sampleDir = assertOutsideRepo(required("--sample"));
+  const annotator = required("--annotator");
+  if (!/^[a-z0-9_-]{2,32}$/.test(annotator)) {
+    throw new Error(
+      "--annotator must be a pseudonym: 2-32 lowercase letters, digits, - or _",
+    );
+  }
+  const sampleManifest = JSON.parse(
+    readFileSync(path.join(sampleDir, "sample-manifest.json"), "utf8"),
+  ) as { seed: string; exportManifestSha256: string };
+  if (
+    sampleManifest.exportManifestSha256 !==
+    sha256File(path.join(exportDir, "manifest.json"))
+  ) {
+    throw new Error("This sample was drawn from a different export.");
+  }
+
+  const data = loadExport(exportDir);
+  const items = readJsonl<LabelItem>(path.join(sampleDir, "sample.jsonl"));
+  const store = createLabelStore(path.join(sampleDir, "labels", `${annotator}.jsonl`));
+  const server = await startLabelServer({
+    data,
+    items,
+    seed: sampleManifest.seed,
+    store,
+    annotator,
+    port: positiveInt("--port", 4319),
+  });
+  console.error(
+    `${items.length} items for ${annotator}; labels go to ${store.file}\n\n  open ${server.url}\n\nCtrl+C to stop.`,
+  );
+  await new Promise<void>((resolve) => process.once("SIGINT", () => resolve()));
+  await server.close();
+}
+
 const COMMANDS: Record<string, () => Promise<void>> = {
   inventory,
   export: exportCommand,
   sample,
   baseline,
+  label,
   schema: async () => {
     process.stdout.write(`${JSON.stringify(annotationJsonSchema(), null, 2)}\n`);
   },
