@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lumberjack labels</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --panel: #171a21;
+        --line: #2a2f3a;
+        --muted: #8b93a3;
+        --text: #e6e8ec;
+        --accent: #5b9dff;
+        --bad: #ff6b6b;
+        --good: #4cc38a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 10px 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      header .grow {
+        flex: 1;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+        padding: 16px;
+      }
+      @media (max-width: 1000px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+      section {
+        min-width: 0;
+      }
+      h3 {
+        margin: 18px 0 6px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      .message {
+        white-space: pre-wrap;
+        word-break: break-word;
+        padding: 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 15px;
+        user-select: text;
+      }
+      .meta,
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 1px 6px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        font-size: 11px;
+        color: var(--muted);
+        margin-right: 4px;
+      }
+      .badge.done {
+        color: var(--good);
+        border-color: var(--good);
+      }
+      .badge.warn {
+        color: var(--bad);
+        border-color: var(--bad);
+      }
+      ol,
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      li.ctx {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        padding: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      li.ctx .body {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      fieldset {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        margin: 0 0 12px;
+        padding: 10px 12px;
+        background: var(--panel);
+      }
+      legend {
+        color: var(--muted);
+        padding: 0 6px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 8px;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      label.inline {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        color: var(--text);
+        font-size: 13px;
+      }
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+        color: var(--text);
+        background: #0c0e12;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 8px;
+      }
+      textarea {
+        min-height: 52px;
+        resize: vertical;
+      }
+      button {
+        cursor: pointer;
+        background: #222733;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #081120;
+        font-weight: 600;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 8px 0;
+      }
+      .chip {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        padding: 2px 4px 2px 8px;
+        margin: 2px;
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        max-width: 100%;
+      }
+      .chip span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chip button {
+        padding: 0 6px;
+        border: 0;
+      }
+      #errors:not(:empty) {
+        border: 1px solid var(--bad);
+        color: var(--bad);
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
+      }
+      #status {
+        color: var(--good);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Labels</strong>
+      <span id="position"></span>
+      <span id="progress" class="meta"></span>
+      <span class="grow"></span>
+      <span id="status"></span>
+      <button id="prev" type="button">← Prev (k)</button>
+      <button id="next" type="button">Next (j) →</button>
+      <button id="next-unlabeled" type="button">Next unlabeled</button>
+    </header>
+    <main>
+      <section>
+        <div id="meta" class="meta"></div>
+        <div id="message" class="message"></div>
+        <div class="row">
+          <button id="add-span" type="button">Add selection as span</button>
+          <span class="hint">to observation</span>
+          <select id="span-target"></select>
+          <button id="mention-from-selection" type="button">
+            Selection → event mention
+          </button>
+        </div>
+        <h3>Earlier messages (same group 24 h · same sender 7 d)</h3>
+        <ol id="context"></ol>
+        <h3>Catalog as of the message</h3>
+        <ul id="catalog"></ul>
+      </section>
+      <section>
+        <div id="errors" role="alert"></div>
+        <div id="observations"></div>
+        <div class="row">
+          <button id="add-observation" type="button">+ Add observation</button>
+        </div>
+        <label class="inline"
+          ><input type="checkbox" id="needs-review" /> Needs review before linking or
+          changing the catalog</label
+        >
+        <label>Notes<textarea id="notes"></textarea></label>
+        <div class="row">
+          <button id="save" class="primary" type="button">Save (s)</button>
+          <button id="unrelated" type="button">Unrelated &amp; next (u)</button>
+        </div>
+        <p class="hint">
+          Context you tick, a party you pick and a related message you pick are recorded
+          as context used.
+        </p>
+      </section>
+    </main>
+    <script src="/app.js?t=__TOKEN__"></script>
+  </body>
+</html>

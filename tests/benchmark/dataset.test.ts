@@ -9,7 +9,7 @@ async function writeExport() {
   const dir = path.join(mkdtempSync(path.join(tmpdir(), "lj-ds-")), "export");
   const sink = createJsonlSink(dir);
   const files = [];
-  for (const name of ["messages", "parties", "candidates"]) {
+  for (const name of ["messages", "parties", "lots", "candidates"]) {
     const file = sink.file(`${name}.jsonl`);
     file.write({ id: `${name}-1` });
     files.push(await file.close());
@@ -26,6 +26,7 @@ describe("loadExport", () => {
     const data = loadExport(await writeExport());
     expect(data.messages).toEqual([{ id: "messages-1" }]);
     expect(data.parties).toEqual([{ id: "parties-1" }]);
+    expect(data.lots).toEqual([{ id: "lots-1" }]);
     expect(data.candidates).toEqual([{ id: "candidates-1" }]);
     expect(data.manifest.exportVersion).toBe(1);
   });
