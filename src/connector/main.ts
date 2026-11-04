@@ -13,6 +13,7 @@ import { writeWaStatus } from "@/connector/status";
 import { prisma } from "@/db/client";
 import { isListenDay } from "@/domain/timezone";
 import { ingestRawMessage } from "@/ingest/ingest";
+import { loadPipelineConfig } from "@/pipeline/config";
 
 try {
   process.loadEnvFile();
@@ -26,6 +27,20 @@ const RECONNECT_BASE_DELAY_MS = 1_000;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const STATUS_WRITE_THROTTLE_MS = 30_000;
 const SHUTDOWN_FLUSH_MS = 2_000;
+
+/** A bad pipeline flag must never stop capture: what is stored unqueued can be queued later. */
+function readInterpretOnCapture(): boolean {
+  try {
+    return loadPipelineConfig().interpret !== "off";
+  } catch (err) {
+    console.error(
+      "pipeline flags ignored, capturing without queueing:",
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+const interpretOnCapture = readInterpretOnCapture();
 
 let skippedListenDay = false;
 let reconnectAttempts = 0;
@@ -188,17 +203,21 @@ async function handleMessage(sock: WASocket, msg: WAMessage): Promise<void> {
 
     const senderWaId = msg.key.participant ?? jid;
     const participant = meta?.participants.find((p) => p.id === senderWaId);
-    const ingested = await ingestRawMessage(prisma, {
-      waMessageId: msg.key.id ?? `${jid}:${sentAtOf(msg).toISOString()}`,
-      groupWaId: jid,
-      groupName,
-      senderWaId,
-      senderName: msg.pushName ?? null,
-      sentAt: sentAtOf(msg),
-      text,
-      senderIsGroupAdmin:
-        participant?.admin === "admin" || participant?.admin === "superadmin",
-    });
+    const ingested = await ingestRawMessage(
+      prisma,
+      {
+        waMessageId: msg.key.id ?? `${jid}:${sentAtOf(msg).toISOString()}`,
+        groupWaId: jid,
+        groupName,
+        senderWaId,
+        senderName: msg.pushName ?? null,
+        sentAt: sentAtOf(msg),
+        text,
+        senderIsGroupAdmin:
+          participant?.admin === "admin" || participant?.admin === "superadmin",
+      },
+      { interpret: interpretOnCapture },
+    );
     if (ingested.duplicateOfId) {
       console.log("cross-post collapsed", groupName, msg.pushName ?? senderWaId);
     }

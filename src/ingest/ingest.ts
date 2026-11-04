@@ -7,6 +7,7 @@ import {
 } from "@/domain/dedupe";
 import { extractCandidates } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
+import { newJob } from "@/pipeline/queue";
 
 export type RawMessageInput = {
   waMessageId: string;
@@ -19,9 +20,15 @@ export type RawMessageInput = {
   senderIsGroupAdmin?: boolean;
 };
 
+export type IngestOptions = {
+  /** Queue the message for shadow interpretation in the same write that stores it. */
+  interpret?: boolean;
+};
+
 export async function ingestRawMessage(
   db: PrismaClient,
   input: RawMessageInput,
+  options: IngestOptions = {},
 ): Promise<{ created: boolean; messageId: string; duplicateOfId?: string }> {
   const group = await db.group.upsert({
     where: { waId: input.groupWaId },
@@ -71,6 +78,10 @@ export async function ingestRawMessage(
     ? await findCanonicalCopy(db, sender.id, fingerprint, input.sentAt)
     : null;
 
+  // A copy is interpreted through its canonical message, and a muted sender's
+  // posts never reach the board, so neither is worth a model call.
+  const queue = options.interpret === true && !duplicateOfId && !sender.muted;
+
   const message = await db.message.create({
     data: {
       waMessageId: input.waMessageId,
@@ -81,6 +92,9 @@ export async function ingestRawMessage(
       class: null,
       fingerprint,
       duplicateOfId,
+      ...(queue
+        ? { processingJobs: { create: newJob("interpret", input.waMessageId) } }
+        : {}),
     },
   });
 
