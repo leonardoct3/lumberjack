@@ -31,7 +31,7 @@ npm run bench -- label --export DIR --sample DIR --annotator ID [--port 4319]
   - `GET /app.js` serves the script.
   - `GET /api/queue` returns the ordered item ids with set, split, excluded flag and labeled flag, plus progress.
   - `GET /api/item/:messageId` returns the item view below.
-  - `POST /api/label` validates a label and appends it.
+  - `POST /api/label/:messageId` validates a label and appends it.
   - Anything else gets 404.
 
 ## Item view
