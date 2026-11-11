@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Annotation } from "@/benchmark/annotation";
 import {
+  agreedIds,
+  auditIds,
   auditReport,
   buildReviewPlan,
   compareAnnotations,
@@ -137,6 +139,14 @@ describe("buildReviewPlan", () => {
     }
   });
 
+  it("lists every agreement, test split included, and nothing contested", () => {
+    const agreed = agreedIds(plan);
+    expect(agreed).toHaveLength(10);
+    expect(agreed).toContain("m0");
+    expect(agreed).not.toContain("m2");
+    expect(agreed).not.toContain("m11");
+  });
+
   it("draws the same audit for the same seed", () => {
     const again = buildReviewPlan({
       items,
@@ -158,7 +168,7 @@ describe("buildReviewPlan", () => {
       [audited[0], annotation(audited[0], [obs()], "human")],
       [audited[1], annotation(audited[1], [obs({ intent: "demand" })], "human")],
     ]);
-    expect(auditReport(plan, a, human)).toMatchObject({
+    expect(auditReport(auditIds(plan), a, human)).toMatchObject({
       audited: 3,
       reviewed: 2,
       changed: 1,

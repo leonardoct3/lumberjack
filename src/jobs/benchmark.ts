@@ -32,6 +32,8 @@ import {
   type Price,
 } from "@/benchmark/draft/providers";
 import {
+  agreedIds,
+  auditIds,
   auditReport,
   buildReviewPlan,
   COMPARE_VERSION,
@@ -77,7 +79,7 @@ const USAGE = `Usage: npm run bench -- <command> [options]
   draft     --export DIR --sample DIR --budget-usd N
             [--openai MODEL --openai-price IN/OUT] [--anthropic MODEL --anthropic-price IN/OUT]
             [--cursor MODEL[,param=value...]@IN/OUT]... [--limit N] [--concurrency 4]
-  silver    --export DIR --sample DIR --annotator ID --drafts A_ID,B_ID
+  silver    --export DIR --sample DIR --annotator ID --drafts A_ID,B_ID [--unreviewed]
   schema
 
 Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.
@@ -556,10 +558,13 @@ function loadReview(sampleDir: string, items: LabelItem[], seed: string) {
 
 /**
  * Silver labels: draft A on items both drafts agree on and nobody reviewed,
- * with an error estimate from the audit the reviewer labelled.
+ * with an error estimate from the agreements a person labelled. With
+ * --unreviewed the test split and audit are not waited for: every agreement
+ * without a human label is silver, and contested items are left out.
  */
 async function silver(): Promise<void> {
   const annotator = required("--annotator");
+  const unreviewed = process.argv.includes("--unreviewed");
   const { sampleDir, items, manifest } = loadSample();
   const { plan, drafts, planFile } = loadReview(sampleDir, items, manifest.seed);
   const human = new Map(
@@ -569,8 +574,14 @@ async function silver(): Promise<void> {
       ).latest(),
     ].filter(([, a]) => a.source === "human"),
   );
-  const audit = auditReport(plan, drafts[0], human);
+  const agreed = agreedIds(plan);
+  const silverIds = unreviewed
+    ? agreed.filter((id) => !human.has(id))
+    : plan.silver.filter((id) => !human.has(id));
+  const audit = auditReport(unreviewed ? agreed : auditIds(plan), drafts[0], human);
   const pending = plan.review.filter((e) => !human.has(e.messageId)).length;
+  const silverSet = new Set(silverIds);
+  const testItems = items.filter((i) => i.split === "test" && i.excluded == null);
 
   const outDir = path.join(
     sampleDir,
@@ -579,7 +590,7 @@ async function silver(): Promise<void> {
   );
   const sink = createJsonlSink(outDir);
   const out = sink.file("silver.jsonl");
-  for (const id of plan.silver) out.write(drafts[0].get(id));
+  for (const id of silverIds) out.write(drafts[0].get(id));
   const file = await out.close();
   const report = {
     createdAt: new Date().toISOString(),
@@ -589,17 +600,26 @@ async function silver(): Promise<void> {
       sha256: sha256File(planFile),
       counts: plan.counts,
     },
+    mode: unreviewed ? "unreviewed" : "reviewed",
     source: plan.drafters[0],
     agreedWith: plan.drafters[1],
     file,
+    humanLabels: human.size,
+    contestedLeftOut: plan.counts.usable - agreed.length,
+    heldOutTest: {
+      usable: testItems.length,
+      silver: testItems.filter((i) => silverSet.has(i.messageId)).length,
+      human: testItems.filter((i) => human.has(i.messageId)).length,
+    },
     reviewPending: pending,
     audit,
-    caveat:
-      "Silver is two models agreeing, not a person checking. Report it apart from gold; audit.errorRateInterval bounds how often a person would have changed it.",
+    caveat: unreviewed
+      ? "Nobody reviewed these: silver is two models agreeing, test split included, with contested items left out, so scores lean towards easier messages. Report it apart from gold, and never evaluate either drafting model on it."
+      : "Silver is two models agreeing, not a person checking. Report it apart from gold; audit.errorRateInterval bounds how often a person would have changed it.",
   };
   writeJson(path.join(outDir, "manifest.json"), report);
   console.log(JSON.stringify(report, null, 2));
-  if (audit.reviewed < audit.audited) {
+  if (!unreviewed && audit.reviewed < audit.audited) {
     console.error(
       `audit incomplete: ${audit.reviewed} of ${audit.audited} reviewed, so the error rate is not final`,
     );

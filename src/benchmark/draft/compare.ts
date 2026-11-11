@@ -168,36 +168,42 @@ export function buildReviewPlan(options: {
   };
 }
 
+/** Every usable item both drafts agree on, test split and audit included. */
+export function agreedIds(plan: ReviewPlan): string[] {
+  const contested = (e: ReviewEntry) =>
+    e.reasons.includes("disagreement") || e.reasons.includes("missing_draft");
+  return [
+    ...plan.silver,
+    ...plan.review.filter((e) => !contested(e)).map((e) => e.messageId),
+  ];
+}
+
+export const auditIds = (plan: ReviewPlan) =>
+  plan.review.filter((e) => e.reasons.includes("audit")).map((e) => e.messageId);
+
 /**
- * Silver error, estimated from the audit: how often the reviewer changed a
- * scored field of an agreement. Unreviewed audit items are not counted.
+ * Silver error: how often a person's label differs from an agreement on a
+ * scored field, over the given agreed items that a person labelled.
  */
 export function auditReport(
-  plan: ReviewPlan,
+  ids: string[],
   draftA: Map<string, Annotation>,
   human: Map<string, Annotation>,
 ) {
-  const audited = plan.review.filter((e) => e.reasons.includes("audit"));
-  const reviewed = audited.filter((e) => human.get(e.messageId)?.source === "human");
-  const changed = reviewed.filter(
-    (e) =>
-      compareAnnotations(draftA.get(e.messageId)!, human.get(e.messageId)!).length > 0,
-  );
+  const reviewed = ids.filter((id) => human.get(id)?.source === "human");
   const byField: Partial<Record<ComparedField, number>> = {};
-  for (const e of changed) {
-    for (const field of compareAnnotations(
-      draftA.get(e.messageId)!,
-      human.get(e.messageId)!,
-    )) {
-      byField[field] = (byField[field] ?? 0) + 1;
-    }
+  let changed = 0;
+  for (const id of reviewed) {
+    const fields = compareAnnotations(draftA.get(id)!, human.get(id)!);
+    if (fields.length > 0) changed += 1;
+    for (const field of fields) byField[field] = (byField[field] ?? 0) + 1;
   }
   return {
-    audited: audited.length,
+    audited: ids.length,
     reviewed: reviewed.length,
-    changed: changed.length,
-    errorRate: reviewed.length > 0 ? changed.length / reviewed.length : null,
-    errorRateInterval: wilsonInterval(changed.length, reviewed.length),
+    changed,
+    errorRate: reviewed.length > 0 ? changed / reviewed.length : null,
+    errorRateInterval: wilsonInterval(changed, reviewed.length),
     changedFields: byField,
   };
 }
