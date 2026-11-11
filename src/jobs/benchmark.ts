@@ -60,7 +60,7 @@ const USAGE = `Usage: npm run bench -- <command> [options]
   label     --export DIR --sample DIR --annotator ID [--port 4319]
   models
   draft     --export DIR --sample DIR --budget-usd N
-            --openai MODEL --openai-price IN/OUT --anthropic MODEL --anthropic-price IN/OUT
+            [--openai MODEL --openai-price IN/OUT] [--anthropic MODEL --anthropic-price IN/OUT]
             [--limit N] [--concurrency 4]
   schema
 
@@ -477,17 +477,31 @@ async function draft(): Promise<void> {
   if (!Number.isFinite(budgetUsd) || budgetUsd <= 0)
     throw new Error("--budget-usd must be positive");
   const { sampleDir, manifest, data, items } = loadSample();
+  // Providers can run separately: each drafts into its own file and resumes there.
+  const openaiModel = argValue("--openai");
+  const anthropicModel = argValue("--anthropic");
+  if (!openaiModel && !anthropicModel) {
+    throw new Error(`Pass --openai, --anthropic or both.\n\n${USAGE}`);
+  }
   const drafters = [
-    openaiDrafter({
-      key: loadApiKey(KEY_FILES.openai),
-      model: required("--openai"),
-      price: price("--openai-price"),
-    }),
-    anthropicDrafter({
-      key: loadApiKey(KEY_FILES.anthropic),
-      model: required("--anthropic"),
-      price: price("--anthropic-price"),
-    }),
+    ...(openaiModel
+      ? [
+          openaiDrafter({
+            key: loadApiKey(KEY_FILES.openai),
+            model: openaiModel,
+            price: price("--openai-price"),
+          }),
+        ]
+      : []),
+    ...(anthropicModel
+      ? [
+          anthropicDrafter({
+            key: loadApiKey(KEY_FILES.anthropic),
+            model: anthropicModel,
+            price: price("--anthropic-price"),
+          }),
+        ]
+      : []),
   ];
   const limit = argValue("--limit");
   const report = await runDrafts({

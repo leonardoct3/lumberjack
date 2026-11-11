@@ -76,10 +76,14 @@ export function drafterId(provider: Provider, model: string): string {
 /** Error bodies name the problem, never the key, so their message is safe to surface. */
 async function failure(response: Response): Promise<DraftError> {
   let detail = "";
+  let code: unknown;
   try {
-    const body = (await response.json()) as { error?: { message?: unknown } };
+    const body = (await response.json()) as {
+      error?: { message?: unknown; code?: unknown; type?: unknown };
+    };
     if (typeof body.error?.message === "string")
       detail = `: ${body.error.message.slice(0, 300)}`;
+    code = body.error?.code ?? body.error?.type;
   } catch {
     // An unreadable body still has a status worth reporting.
   }
@@ -87,11 +91,14 @@ async function failure(response: Response): Promise<DraftError> {
   const retryAfter = Number(response.headers.get("retry-after"));
   const retryAfterMs =
     Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined;
+  // OpenAI reports an empty balance as a 429, which waiting never fixes.
+  const outOfCredit = code === "insufficient_quota";
   const transient =
-    response.status === 408 ||
-    response.status === 409 ||
-    response.status === 429 ||
-    response.status >= 500;
+    !outOfCredit &&
+    (response.status === 408 ||
+      response.status === 409 ||
+      response.status === 429 ||
+      response.status >= 500);
   return new DraftError(
     transient ? "transient" : "fatal",
     message,

@@ -125,6 +125,21 @@ describe("openaiDrafter", () => {
     expect(busy.kind).toBe("transient");
     expect(busy.retryAfterMs).toBe(7000);
 
+    const broke = fakeFetch(429, {
+      error: {
+        message: "You have no credits remaining.",
+        type: "insufficient_quota",
+        code: "insufficient_quota",
+      },
+    });
+    expect(
+      (
+        await failureOf(
+          openaiDrafter({ key: KEY, model: "m", price, fetch: broke.fn }).draft(call),
+        )
+      ).kind,
+    ).toBe("fatal");
+
     const denied = fakeFetch(401, { error: { message: "Incorrect API key provided" } });
     const fatal = await failureOf(
       openaiDrafter({ key: KEY, model: "m", price, fetch: denied.fn }).draft(call),
