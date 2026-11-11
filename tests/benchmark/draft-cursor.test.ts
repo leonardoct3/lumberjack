@@ -1,6 +1,7 @@
 import { AuthenticationError, NetworkError, RateLimitError } from "@cursor/sdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  creationTurn,
   cursorClient,
   type CursorRunRequest,
   type CursorRunResult,
@@ -111,6 +112,27 @@ describe("cursorClient", () => {
       }).complete(call),
     );
     expect([error.kind, error.message]).toEqual(["transient", "run error: stalled"]);
+  });
+});
+
+describe("creationTurn", () => {
+  it("spaces agent creation to stay under Cursor's per-minute limit", async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now() + 60_000;
+      vi.setSystemTime(start);
+      const done: number[] = [];
+      const turns = [0, 1, 2].map((i) => creationTurn().then(() => done.push(i)));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(done).toEqual([0]);
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(done).toEqual([0, 1]);
+      await vi.advanceTimersByTimeAsync(2_500);
+      await Promise.all(turns);
+      expect(done).toEqual([0, 1, 2]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -62,6 +62,17 @@ export function translateSdkError(error: unknown): unknown {
   return new ModelError("transient", message);
 }
 
+/** Creating an agent lists models, which Cursor allows 30 times a minute per key. */
+const CREATION_SPACING_MS = 2_500;
+let nextCreation = 0;
+
+export async function creationTurn(now: () => number = Date.now): Promise<void> {
+  const at = Math.max(now(), nextCreation);
+  nextCreation = at + CREATION_SPACING_MS;
+  const wait = at - now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+}
+
 /**
  * One throwaway local agent per call: no tools, no ambient settings, an empty
  * working directory, and a conversation store deleted with it, so message
@@ -69,6 +80,7 @@ export function translateSdkError(error: unknown): unknown {
  * since custom ones need an account flag; the guide travels in the message.
  */
 export const sdkRunner: CursorRunner = async (request) => {
+  await creationTurn();
   const root = mkdtempSync(path.join(tmpdir(), "lj-draft-"));
   const work = path.join(root, "work");
   mkdirSync(work, { mode: 0o700 });
