@@ -1,6 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
@@ -24,6 +30,11 @@ import {
   openaiDrafter,
   type Price,
 } from "@/benchmark/draft/providers";
+import {
+  auditReport,
+  buildReviewPlan,
+  type ReviewPlan,
+} from "@/benchmark/draft/compare";
 import { cursorDrafter, listCursorModels } from "@/benchmark/draft/cursor";
 import { runDrafts } from "@/benchmark/draft/run";
 import { exportDataset } from "@/benchmark/export";
@@ -57,12 +68,14 @@ const USAGE = `Usage: npm run bench -- <command> [options]
   export    --from YYYY-MM-DD --to YYYY-MM-DD --out DIR [--context-days 7] [--deployed-revision SHA]
   sample    --export DIR --seed SEED --calibration-from YYYY-MM-DD --test-from YYYY-MM-DD
             [--random-size 300] [--per-tag 15]
-  baseline  --export DIR --out DIR [--sample DIR] [--gold FILE]
+  baseline  --export DIR --out DIR [--sample DIR] [--gold FILE] [--silver FILE]
   label     --export DIR --sample DIR --annotator ID [--port 4319]
+            [--review --drafts A_ID,B_ID [--audit-size 30]]
   models
   draft     --export DIR --sample DIR --budget-usd N
             [--openai MODEL --openai-price IN/OUT] [--anthropic MODEL --anthropic-price IN/OUT]
             [--cursor MODEL[,param=value...]@IN/OUT]... [--limit N] [--concurrency 4]
+  silver    --export DIR --sample DIR --annotator ID --drafts A_ID,B_ID
   schema
 
 Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.
@@ -324,82 +337,114 @@ async function baseline(): Promise<void> {
     files,
   };
 
+  const sampleDir = argValue("--sample");
+  const items = sampleDir
+    ? readJsonl<SampleItem & SplitAssignment>(
+        path.join(assertOutsideRepo(sampleDir), "sample.jsonl"),
+      )
+    : [];
+  const scoreFile = (file: string, accept: Annotation["source"][]) =>
+    scoreLabels({
+      file,
+      accept,
+      data,
+      items,
+      predictionsBy,
+      bySample: sampleDir != null,
+    });
+
   const goldFile = argValue("--gold");
   if (goldFile) {
-    const texts = new Map(data.messages.map((m) => [m.id, m.text]));
-    const valid: Annotation[] = [];
-    const invalid: { messageId: unknown; errors: string[] }[] = [];
-    const records = readJsonl<{ messageId?: unknown }>(assertOutsideRepo(goldFile));
-    for (const raw of latestAnnotations(records)) {
-      const text =
-        typeof raw.messageId === "string" ? texts.get(raw.messageId) : undefined;
-      if (text == null) {
-        invalid.push({
-          messageId: raw.messageId,
-          errors: ["messageId is not in this export"],
-        });
-        continue;
-      }
-      const result = validateAnnotation(raw, { text });
-      if (
-        result.annotation &&
-        result.errors.length === 0 &&
-        result.annotation.source === "human"
-      ) {
-        valid.push(result.annotation);
-      } else {
-        invalid.push({
-          messageId: raw.messageId,
-          errors:
-            result.errors.length > 0
-              ? result.errors
-              : ["only human-reviewed labels are scored"],
-        });
-      }
+    const { labels, scores } = scoreFile(goldFile, ["human"]);
+    report.gold = labels;
+    report.scores = scores;
+  }
+  // Silver is model agreement, not ground truth: it is kept apart from gold and never
+  // covers the held-out test split.
+  const silverFile = argValue("--silver");
+  if (silverFile) {
+    const { labels, scores } = scoreFile(silverFile, ["model_draft"]);
+    report.silver = labels;
+    report.silverScores = scores;
+  }
+
+  writeJson(path.join(outDir, "report.json"), report);
+  console.error(`wrote ${outDir}`);
+}
+
+function scoreLabels(options: {
+  file: string;
+  accept: Annotation["source"][];
+  data: ReturnType<typeof loadExport>;
+  items: (SampleItem & SplitAssignment)[];
+  predictionsBy: Record<CatalogMode, BaselinePrediction[]>;
+  bySample: boolean;
+}) {
+  const file = assertOutsideRepo(options.file);
+  const texts = new Map(options.data.messages.map((m) => [m.id, m.text]));
+  const valid: Annotation[] = [];
+  const invalid: { messageId: unknown; errors: string[] }[] = [];
+  for (const raw of latestAnnotations(readJsonl<{ messageId?: unknown }>(file))) {
+    const text =
+      typeof raw.messageId === "string" ? texts.get(raw.messageId) : undefined;
+    if (text == null) {
+      invalid.push({
+        messageId: raw.messageId,
+        errors: ["messageId is not in this export"],
+      });
+      continue;
     }
+    const result = validateAnnotation(raw, { text });
+    if (
+      result.annotation &&
+      result.errors.length === 0 &&
+      options.accept.includes(result.annotation.source)
+    ) {
+      valid.push(result.annotation);
+    } else {
+      invalid.push({
+        messageId: raw.messageId,
+        errors:
+          result.errors.length > 0
+            ? result.errors
+            : [`only ${options.accept.join(" or ")} labels are scored here`],
+      });
+    }
+  }
 
-    const sampleDir = argValue("--sample");
-    const items = sampleDir
-      ? readJsonl<SampleItem & SplitAssignment>(
-          path.join(assertOutsideRepo(sampleDir), "sample.jsonl"),
-        )
-      : [];
-    const score = (
-      keep: (a: Annotation) => boolean,
-    ): Record<CatalogMode, ScoredSet> => {
-      const subset = valid.filter(keep);
-      return Object.fromEntries(
-        modes.map((mode) => [
-          mode,
-          {
-            intents: scoreIntents(subset, predictionsBy[mode]),
-            links: scoreLinks(subset, predictionsBy[mode]),
-          },
-        ]),
-      ) as Record<CatalogMode, ScoredSet>;
-    };
-    const inItems = (filter: (i: SampleItem & SplitAssignment) => boolean) => {
-      const ids = new Set(items.filter(filter).map((i) => i.messageId));
-      return (a: Annotation) => ids.has(a.messageId);
-    };
+  const modes = Object.keys(options.predictionsBy) as CatalogMode[];
+  const score = (keep: (a: Annotation) => boolean): Record<CatalogMode, ScoredSet> => {
+    const subset = valid.filter(keep);
+    return Object.fromEntries(
+      modes.map((mode) => [
+        mode,
+        {
+          intents: scoreIntents(subset, options.predictionsBy[mode]),
+          links: scoreLinks(subset, options.predictionsBy[mode]),
+        },
+      ]),
+    ) as Record<CatalogMode, ScoredSet>;
+  };
+  const inItems = (filter: (i: SampleItem & SplitAssignment) => boolean) => {
+    const ids = new Set(options.items.filter(filter).map((i) => i.messageId));
+    return (a: Annotation) => ids.has(a.messageId);
+  };
 
-    report.gold = {
-      file: path.basename(goldFile),
-      sha256: sha256File(goldFile),
+  return {
+    labels: {
+      file: path.basename(file),
+      sha256: sha256File(file),
       scored: valid.length,
       rejected: invalid,
-    };
-    report.scores = sampleDir
+    },
+    scores: options.bySample
       ? {
           random: score(inItems((i) => i.set === "random")),
           challenge: score(inItems((i) => i.set === "challenge")),
           heldOutTest: score(inItems((i) => i.split === "test" && i.excluded == null)),
         }
-      : { all: score(() => true) };
-  }
-
-  writeJson(path.join(outDir, "report.json"), report);
-  console.error(`wrote ${outDir}`);
+      : { all: score(() => true) },
+  };
 }
 
 function loadSample() {
@@ -431,6 +476,9 @@ async function label(): Promise<void> {
   }
   const { sampleDir, manifest: sampleManifest, data, items } = loadSample();
   const store = createLabelStore(path.join(sampleDir, "labels", `${annotator}.jsonl`));
+  const review = process.argv.includes("--review")
+    ? loadReview(sampleDir, items, sampleManifest.seed)
+    : undefined;
   const server = await startLabelServer({
     data,
     items,
@@ -438,12 +486,115 @@ async function label(): Promise<void> {
     store,
     annotator,
     port: positiveInt("--port", 4319),
+    review: review && { plan: review.plan, drafts: review.drafts },
   });
+  const count = review ? review.plan.review.length : items.length;
   console.error(
-    `${items.length} items for ${annotator}; labels go to ${store.file}\n\n  open ${server.url}\n\nCtrl+C to stop.`,
+    `${count} items for ${annotator}${review ? " to review" : ""}; labels go to ${store.file}\n\n  open ${server.url}\n\nCtrl+C to stop.`,
   );
   await new Promise<void>((resolve) => process.once("SIGINT", () => resolve()));
   await server.close();
+}
+
+function draftIds(): [string, string] {
+  const ids = required("--drafts").split(",");
+  if (
+    ids.length !== 2 ||
+    ids.some((id) => !/^[a-z0-9_.-]+$/.test(id)) ||
+    ids[0] === ids[1]
+  ) {
+    throw new Error("--drafts takes two different drafter ids: A_ID,B_ID");
+  }
+  return [ids[0], ids[1]];
+}
+
+/**
+ * The review plan is written once and reused, so the audit stays the same draw
+ * across sessions even if drafts are added later.
+ */
+function loadReview(sampleDir: string, items: LabelItem[], seed: string) {
+  const ids = draftIds();
+  const drafts = ids.map((id) => {
+    const file = path.join(sampleDir, "drafts", `${id}.jsonl`);
+    if (!existsSync(file))
+      throw new Error(`No drafts for ${id} in ${path.dirname(file)}`);
+    return createLabelStore(file).latest();
+  }) as [Map<string, Annotation>, Map<string, Annotation>];
+  const planFile = path.join(sampleDir, "review", "plan.json");
+  let plan: ReviewPlan;
+  if (existsSync(planFile)) {
+    plan = JSON.parse(readFileSync(planFile, "utf8")) as ReviewPlan;
+    if (plan.drafters.join() !== ids.join()) {
+      throw new Error(
+        `${planFile} was planned for ${plan.drafters.join(",")}, not ${ids.join(",")}`,
+      );
+    }
+  } else {
+    plan = buildReviewPlan({
+      items,
+      drafts: [
+        { id: ids[0], byMessage: drafts[0] },
+        { id: ids[1], byMessage: drafts[1] },
+      ],
+      seed,
+      auditSize: positiveInt("--audit-size", 30),
+    });
+    writeJson(planFile, plan);
+    console.error(`wrote ${planFile}: ${JSON.stringify(plan.counts)}`);
+  }
+  return { plan, drafts, planFile };
+}
+
+/**
+ * Silver labels: draft A on items both drafts agree on and nobody reviewed,
+ * with an error estimate from the audit the reviewer labelled.
+ */
+async function silver(): Promise<void> {
+  const annotator = required("--annotator");
+  const { sampleDir, items, manifest } = loadSample();
+  const { plan, drafts, planFile } = loadReview(sampleDir, items, manifest.seed);
+  const human = new Map(
+    [
+      ...createLabelStore(
+        path.join(sampleDir, "labels", `${annotator}.jsonl`),
+      ).latest(),
+    ].filter(([, a]) => a.source === "human"),
+  );
+  const audit = auditReport(plan, drafts[0], human);
+  const pending = plan.review.filter((e) => !human.has(e.messageId)).length;
+
+  const outDir = path.join(
+    sampleDir,
+    "silver",
+    new Date().toISOString().replace(/[:.]/g, "-"),
+  );
+  const sink = createJsonlSink(outDir);
+  const out = sink.file("silver.jsonl");
+  for (const id of plan.silver) out.write(drafts[0].get(id));
+  const file = await out.close();
+  const report = {
+    createdAt: new Date().toISOString(),
+    exportManifestSha256: manifest.exportManifestSha256,
+    plan: {
+      file: path.relative(sampleDir, planFile),
+      sha256: sha256File(planFile),
+      counts: plan.counts,
+    },
+    source: plan.drafters[0],
+    agreedWith: plan.drafters[1],
+    file,
+    reviewPending: pending,
+    audit,
+    caveat:
+      "Silver is two models agreeing, not a person checking. Report it apart from gold; audit.errorRateInterval bounds how often a person would have changed it.",
+  };
+  writeJson(path.join(outDir, "manifest.json"), report);
+  console.log(JSON.stringify(report, null, 2));
+  if (audit.reviewed < audit.audited) {
+    console.error(
+      `audit incomplete: ${audit.reviewed} of ${audit.audited} reviewed, so the error rate is not final`,
+    );
+  }
 }
 
 const KEY_FILES = {
@@ -583,6 +734,7 @@ const COMMANDS: Record<string, () => Promise<void>> = {
   label,
   models,
   draft,
+  silver,
   schema: async () => {
     process.stdout.write(`${JSON.stringify(annotationJsonSchema(), null, 2)}\n`);
   },

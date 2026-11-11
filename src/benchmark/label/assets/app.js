@@ -26,11 +26,30 @@
   ];
 
   const $ = (id) => document.getElementById(id);
+  const FIELD_LABELS = {
+    observations: "number of observations",
+    intent: "intent",
+    party: "party",
+    resolution: "resolution",
+    category: "category",
+    quantity: "quantity",
+    price: "price",
+    date: "date",
+    relationship: "relationship",
+  };
+  const REASON_LABELS = {
+    disagreement: "drafts disagree",
+    missing_draft: "a draft is missing",
+    test: "held-out test",
+    audit: "audit of an agreement",
+  };
+
   const state = {
     queue: [],
     progress: null,
     index: 0,
     view: null,
+    review: null,
     obs: [],
     used: new Set(),
     dirty: false,
@@ -486,6 +505,165 @@
     );
   }
 
+  // ---- review mode: two model drafts beside the form ----
+
+  function partyLabel(id) {
+    const party = state.view.catalog.find((p) => p.id === id);
+    return party ? party.name + " · " + party.eventAt.slice(0, 10) : id;
+  }
+
+  function contextLabel(id) {
+    const c = state.view.context.find((m) => m.id === id);
+    return c ? c.sentAtLocal + " · " + c.text.slice(0, 40) : id;
+  }
+
+  function draftRows(o) {
+    const d = o.eventDate;
+    const part = (v) => (v == null ? "?" : String(v));
+    return [
+      ["intent", o.intent],
+      ["party", o.event.partyId ? partyLabel(o.event.partyId) : "—"],
+      ["resolution", o.event.resolution],
+      ["category", o.ticketCategory || "—"],
+      ["quantity", o.quantity == null ? "—" : String(o.quantity)],
+      [
+        "price",
+        o.price
+          ? o.price.amount + " " + o.price.currency + " (" + o.price.meaning + ")"
+          : "—",
+      ],
+      [
+        "date",
+        d
+          ? [part(d.day), part(d.month), part(d.year)].join("/") + " (" + d.basis + ")"
+          : "—",
+      ],
+      [
+        "relationship",
+        o.relationship.kind +
+          (o.relationship.relatedMessage
+            ? " → " + contextLabel(o.relationship.relatedMessage)
+            : ""),
+      ],
+    ];
+  }
+
+  function applyDraft(i) {
+    const draft = state.review && state.review.drafts[i];
+    if (!draft) return;
+    state.obs = draft.observations.map(fromAnnotation);
+    state.used = new Set(draft.contextUsed);
+    $("needs-review").checked = draft.needsReview;
+    touch();
+    renderAll();
+  }
+
+  function renderDrafts() {
+    const box = $("drafts");
+    const review = state.review;
+    if (!review) return box.replaceChildren();
+    const differing = new Set(review.differing);
+    const cards = review.drafts.map((draft, i) => {
+      const name = i === 0 ? "A" : "B";
+      if (!draft) {
+        return el(
+          "div",
+          { class: "draft" },
+          el("strong", { text: "Draft " + name }),
+          el("p", { class: "hint", text: "No valid draft for this message." }),
+        );
+      }
+      return el(
+        "div",
+        { class: "draft" },
+        el(
+          "div",
+          { class: "row" },
+          el("strong", { text: "Draft " + name }),
+          draft.needsReview
+            ? el("span", { class: "badge warn", text: "model unsure" })
+            : null,
+          el("span", { class: "grow" }),
+          el("button", {
+            type: "button",
+            text: "Use " + name + " (" + (i + 1) + ")",
+            onclick: () => applyDraft(i),
+          }),
+        ),
+        draft.observations.map((o, j) =>
+          el(
+            "div",
+            { class: "dobs" },
+            el("div", {
+              class: "meta",
+              text:
+                "Observation " +
+                (j + 1) +
+                (o.event.mention ? " · “" + o.event.mention + "”" : ""),
+            }),
+            el(
+              "dl",
+              {},
+              draftRows(o).flatMap(([field, value]) => [
+                el("dt", {
+                  class: differing.has(field) ? "diff" : null,
+                  text: FIELD_LABELS[field],
+                }),
+                el("dd", { class: differing.has(field) ? "diff" : null, text: value }),
+              ]),
+            ),
+            o.spans.length
+              ? el(
+                  "div",
+                  {},
+                  o.spans.map((s) =>
+                    el(
+                      "span",
+                      { class: "chip" },
+                      el("span", { text: "“" + s.text + "”" }),
+                    ),
+                  ),
+                )
+              : null,
+            o.ambiguities.length
+              ? el(
+                  "ul",
+                  { class: "meta" },
+                  o.ambiguities.map((a) => el("li", { text: "? " + a })),
+                )
+              : null,
+          ),
+        ),
+        draft.notes ? el("p", { class: "meta", text: "Note: " + draft.notes }) : null,
+      );
+    });
+    box.replaceChildren(
+      el(
+        "div",
+        { class: "row" },
+        review.reasons.map((r) =>
+          el("span", { class: "badge", text: REASON_LABELS[r] || r }),
+        ),
+        review.differing.length
+          ? el("span", {
+              class: "meta",
+              text:
+                "differs on: " +
+                review.differing.map((f) => FIELD_LABELS[f] || f).join(", "),
+            })
+          : el("span", {
+              class: "meta",
+              text: "the drafts agree on every scored field",
+            }),
+      ),
+      el("div", { class: "drafts" }, cards),
+      el("p", {
+        class: "hint",
+        text: "Start from a draft with 1 or 2, then check it against the message: what you save is your label.",
+      }),
+    );
+  }
+
   function renderHeader() {
     const item = state.queue[state.index];
     const p = state.progress;
@@ -511,6 +689,7 @@
 
   function renderAll() {
     renderHeader();
+    renderDrafts();
     renderObservations();
     renderContext();
   }
@@ -526,6 +705,7 @@
     if (status !== 200)
       return showErrors(["could not load this item (" + status + ")"]);
     state.view = data.view;
+    state.review = data.review || null;
     state.obs = data.label
       ? data.label.observations.map(fromAnnotation)
       : [blankObservation()];
@@ -636,6 +816,8 @@
       k: () => load(state.index - 1),
       s: () => save(),
       u: () => $("unrelated").click(),
+      1: () => applyDraft(0),
+      2: () => applyDraft(1),
     };
     if (actions[e.key]) {
       e.preventDefault();

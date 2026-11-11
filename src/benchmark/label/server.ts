@@ -2,7 +2,9 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Annotation } from "../annotation";
 import type { LoadedExport } from "../dataset";
+import type { ReviewPlan } from "../draft/compare";
 import type { LabelStore } from "../labels";
 import { buildLabel } from "../labels";
 import { buildItemView, labelQueue, type ItemView, type LabelItem } from "./item";
@@ -30,7 +32,19 @@ export type LabelServerOptions = {
   port: number;
   token?: string;
   now?: () => Date;
+  /** Review mode: only the plan's items, each with both model drafts beside the form. */
+  review?: {
+    plan: ReviewPlan;
+    drafts: [Map<string, Annotation>, Map<string, Annotation>];
+  };
 };
+
+/** Drafts reach the page as A and B with no model name, so the choice rests on the content. */
+function draftView(annotation: Annotation | undefined) {
+  if (!annotation) return null;
+  const { observations, needsReview, contextUsed, notes } = annotation;
+  return { observations, needsReview, contextUsed, notes };
+}
 
 type Tally = { labeled: number; total: number };
 
@@ -92,7 +106,15 @@ export async function startLabelServer(options: LabelServerOptions) {
   const token = options.token ?? randomBytes(32).toString("hex");
   const expected = Buffer.from(token);
   const now = options.now ?? (() => new Date());
-  const queue = labelQueue(options.items, options.seed);
+  const reviewing = new Map(
+    (options.review?.plan.review ?? []).map((entry) => [entry.messageId, entry]),
+  );
+  const queue = labelQueue(
+    options.review
+      ? options.items.filter((i) => reviewing.has(i.messageId))
+      : options.items,
+    options.seed,
+  );
   const items = new Map(queue.map((item) => [item.messageId, item]));
   const views = new Map<string, ItemView>();
   const viewOf = (item: LabelItem) => {
@@ -127,12 +149,14 @@ export async function startLabelServer(options: LabelServerOptions) {
       const labeled = new Set(options.store.latest().keys());
       return json(res, 200, {
         annotator: options.annotator,
+        review: options.review != null,
         items: queue.map((i) => ({
           messageId: i.messageId,
           set: i.set,
           split: i.split,
           excluded: i.excluded,
           labeled: labeled.has(i.messageId),
+          reasons: reviewing.get(i.messageId)?.reasons ?? null,
         })),
         progress: progress(queue, labeled),
       });
@@ -143,9 +167,20 @@ export async function startLabelServer(options: LabelServerOptions) {
     if (match && !item) return json(res, 404, { error: "not in this sample" });
 
     if (item && match![1] === "item" && req.method === "GET") {
+      const entry = reviewing.get(item.messageId);
       return json(res, 200, {
         view: viewOf(item),
         label: options.store.latest().get(item.messageId) ?? null,
+        review:
+          options.review && entry
+            ? {
+                reasons: entry.reasons,
+                differing: entry.differing,
+                drafts: options.review.drafts.map((d) =>
+                  draftView(d.get(item.messageId)),
+                ),
+              }
+            : null,
       });
     }
     if (item && match![1] === "label" && req.method === "POST") {

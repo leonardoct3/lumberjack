@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Annotation } from "@/benchmark/annotation";
 import type { LoadedExport } from "@/benchmark/dataset";
+import type { ReviewPlan } from "@/benchmark/draft/compare";
 import type { LabelItem } from "@/benchmark/label/item";
 import { startLabelServer } from "@/benchmark/label/server";
 import { createLabelStore, type LabelStore } from "@/benchmark/labels";
@@ -163,9 +165,68 @@ describe("label server", () => {
         split: "test",
         excluded: null,
         labeled: false,
+        reasons: null,
       },
     ]);
+    expect(queue.review).toBe(false);
     expect(queue.progress).toMatchObject({ labeled: 0, total: 1 });
+  });
+
+  it("in review mode, queues only planned items and serves both drafts without model names", async () => {
+    await server.close();
+    const draft = {
+      schemaVersion: 1 as const,
+      messageId: "msg_1",
+      annotator: "cursor-secret-model",
+      annotatedAt: "2026-11-11T00:00:00.000Z",
+      source: "model_draft" as const,
+      ...offer,
+    } as Annotation;
+    server = await startLabelServer({
+      data,
+      items: [
+        ...items,
+        { ...items[0], familyId: "f2", messageId: "msg_2", members: ["msg_2"] },
+      ],
+      seed: "s",
+      store,
+      annotator: "lc",
+      port: 0,
+      token: TOKEN,
+      review: {
+        plan: {
+          drafters: ["cursor-secret-model", "other"],
+          auditSize: 0,
+          review: [
+            {
+              messageId: "msg_1",
+              reasons: ["disagreement", "test"],
+              differing: ["quantity"],
+            },
+          ],
+          silver: ["msg_2"],
+          counts: {} as ReviewPlan["counts"],
+        },
+        drafts: [new Map([["msg_1", draft]]), new Map()],
+      },
+    });
+    const queue = JSON.parse((await call("/api/queue")).body);
+    expect(queue.review).toBe(true);
+    expect(queue.items.map((i: { messageId: string }) => i.messageId)).toEqual([
+      "msg_1",
+    ]);
+    expect(queue.items[0].reasons).toEqual(["disagreement", "test"]);
+
+    const res = await call("/api/item/msg_1");
+    const body = JSON.parse(res.body);
+    expect(body.review).toMatchObject({
+      reasons: ["disagreement", "test"],
+      differing: ["quantity"],
+    });
+    expect(body.review.drafts[0].observations).toHaveLength(1);
+    expect(body.review.drafts[1]).toBeNull();
+    expect(res.body).not.toContain("secret-model");
+    expect((await call("/api/item/msg_2")).status).toBe(404);
   });
 
   it("serves an item without what the rules decided", async () => {
