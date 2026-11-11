@@ -23,7 +23,6 @@ import {
 export type CursorRunRequest = {
   apiKey: string;
   model: { id: string; params?: ModelParameterValue[] };
-  systemPrompt: string;
   prompt: string;
   signal?: AbortSignal;
 };
@@ -31,9 +30,13 @@ export type CursorRunRequest = {
 export type CursorRunResult = {
   status: "finished" | "error" | "cancelled" | "running";
   text?: string;
-  error?: string;
+  error?: { message: string; code?: string };
   usage?: Usage;
 };
+
+/** Run errors a retry cannot fix, such as an account without a feature. */
+const REJECTED =
+  /invalid_argument|permission_denied|unauthenticated|failed_precondition/;
 
 export type CursorRunner = (request: CursorRunRequest) => Promise<CursorRunResult>;
 
@@ -59,7 +62,8 @@ export function translateSdkError(error: unknown): unknown {
 /**
  * One throwaway local agent per call: no tools, no ambient settings, an empty
  * working directory, and a conversation store deleted with it, so message
- * text never outlives the call on disk.
+ * text never outlives the call on disk. Cursor's own system prompt stays,
+ * since custom ones need an account flag; the guide travels in the message.
  */
 export const sdkRunner: CursorRunner = async (request) => {
   const root = mkdtempSync(path.join(tmpdir(), "lj-draft-"));
@@ -70,7 +74,6 @@ export const sdkRunner: CursorRunner = async (request) => {
       apiKey: request.apiKey,
       model: request.model,
       tools: [],
-      systemPrompt: request.systemPrompt,
       local: { cwd: work, store: new JsonlLocalAgentStore(path.join(root, "store")) },
     });
     try {
@@ -80,17 +83,16 @@ export const sdkRunner: CursorRunner = async (request) => {
       try {
         const result = await run.wait();
         const usage = result.usage && {
-          // Cache reads and writes are input too; pricing them as input keeps the budget conservative.
+          // Cache writes bill at up to 1.25x input on these models.
           inputTokens:
-            result.usage.inputTokens +
-            result.usage.cacheReadTokens +
-            result.usage.cacheWriteTokens,
+            result.usage.inputTokens + Math.ceil(result.usage.cacheWriteTokens * 1.25),
+          cachedInputTokens: result.usage.cacheReadTokens,
           outputTokens: result.usage.outputTokens,
         };
         return {
           status: result.status,
           text: result.result,
-          error: result.error?.message,
+          error: result.error,
           usage,
         };
       } finally {
@@ -136,21 +138,24 @@ export function cursorDrafter(options: {
     model: options.model,
     params: options.params,
     price: options.price,
+    // Cursor's system prompt ran 15-20k tokens a call in the first smoke run.
+    promptOverheadTokens: 30_000,
     async draft(call) {
       const result = await runner({
         apiKey: options.key,
         model: { id: options.model, params: options.params },
-        systemPrompt: `${call.system}\n\n# Output\nAnswer with one JSON object and nothing else. It must match this JSON Schema:\n${JSON.stringify(call.schema)}`,
-        prompt: call.user,
+        prompt: `${call.system}\n\n# Output\nAnswer with one JSON object and nothing else. It must match this JSON Schema:\n${JSON.stringify(call.schema)}\n\n${call.user}`,
         signal: call.signal,
       });
       const usage = result.usage ?? { inputTokens: 0, outputTokens: 0 };
       if (result.status === "cancelled")
         throw new DraftError("transient", "timed out", usage);
       if (result.status !== "finished") {
+        const { message = "no detail", code = "" } = result.error ?? {};
+        const kind = REJECTED.test(`${code} ${message}`) ? "fatal" : "transient";
         throw new DraftError(
-          "transient",
-          `run ${result.status}: ${result.error ?? "no detail"}`,
+          kind,
+          `run ${result.status}: ${message}`.slice(0, 300),
           usage,
         );
       }

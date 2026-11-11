@@ -64,10 +64,29 @@ describe("cursorDrafter", () => {
     expect(seen[0]).toMatchObject({
       apiKey: "crsr_secret",
       model: { id: "claude-opus-5-5", params: [{ id: "thinking", value: "high" }] },
-      prompt: "item",
     });
-    expect(seen[0].systemPrompt.startsWith("guide")).toBe(true);
-    expect(seen[0].systemPrompt).toContain('{"type":"object"}');
+    expect(seen[0].prompt.startsWith("guide")).toBe(true);
+    expect(seen[0].prompt).toContain('{"type":"object"}');
+    expect(seen[0].prompt.endsWith("item")).toBe(true);
+  });
+
+  it("stops when the account rejects the request instead of retrying it", async () => {
+    const rejected = fakeRunner({
+      status: "error",
+      error: {
+        message:
+          "[invalid_argument] Custom system prompt is not enabled for this account.",
+      },
+    });
+    const error = await failureOf(
+      cursorDrafter({
+        key: "k",
+        model: "gpt-6.1-sol",
+        price,
+        runner: rejected.runner,
+      }).draft(call),
+    );
+    expect(error.kind).toBe("fatal");
   });
 
   it("treats a cancelled or failed run as worth retrying and keeps the tokens it cost", async () => {
@@ -82,7 +101,7 @@ describe("cursorDrafter", () => {
     );
     expect([timedOut.kind, timedOut.usage]).toEqual(["transient", usage]);
 
-    const failed = fakeRunner({ status: "error", error: "stalled" });
+    const failed = fakeRunner({ status: "error", error: { message: "stalled" } });
     const error = await failureOf(
       cursorDrafter({
         key: "k",

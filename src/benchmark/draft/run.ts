@@ -67,6 +67,7 @@ export type DrafterReport = {
   failed: Partial<Record<FailureKind, number>>;
   calls: number;
   inputTokens: number;
+  cachedInputTokens: number;
   outputTokens: number;
   costUsd: number;
   latencyMs: { p50: number | null; p95: number | null };
@@ -133,6 +134,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
       failed: {},
       calls: 0,
       inputTokens: 0,
+      cachedInputTokens: 0,
       outputTokens: 0,
       costUsd: 0,
       latencyMs: { p50: null, p95: null },
@@ -164,9 +166,9 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
     const s = stats.get(drafter.id)!;
     const estimate = costUsd(
       {
-        inputTokens: estimateTokens(
-          LABELING_GUIDE + JSON.stringify(DRAFT_JSON_SCHEMA) + user,
-        ),
+        inputTokens:
+          estimateTokens(LABELING_GUIDE + JSON.stringify(DRAFT_JSON_SCHEMA) + user) +
+          (drafter.promptOverheadTokens ?? 0),
         outputTokens: maxOutputTokens,
       },
       drafter.price,
@@ -182,6 +184,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
       spent += cost;
       s.costUsd += cost;
       s.inputTokens += usage.inputTokens;
+      s.cachedInputTokens += usage.cachedInputTokens ?? 0;
       s.outputTokens += usage.outputTokens;
     };
     const started = Date.now();

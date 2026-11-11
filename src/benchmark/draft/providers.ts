@@ -1,6 +1,11 @@
 export type Provider = "openai" | "anthropic";
 
-export type Price = { inputPerMTok: number; outputPerMTok: number };
+export type Price = {
+  inputPerMTok: number;
+  outputPerMTok: number;
+  /** Cache reads; without it they are charged as fresh input, which only overstates spend. */
+  cachedInputPerMTok?: number;
+};
 
 export type DraftCall = {
   system: string;
@@ -10,7 +15,12 @@ export type DraftCall = {
   signal?: AbortSignal;
 };
 
-export type Usage = { inputTokens: number; outputTokens: number };
+export type Usage = {
+  inputTokens: number;
+  outputTokens: number;
+  /** Served from the prompt cache, on top of `inputTokens`. */
+  cachedInputTokens?: number;
+};
 
 export type DraftReply = { output: unknown; usage: Usage };
 
@@ -42,6 +52,8 @@ export type Drafter = {
   model: string;
   params?: { id: string; value: string }[];
   price: Price;
+  /** Input the route adds on its own, so the budget reservation stays an upper bound. */
+  promptOverheadTokens?: number;
   draft(call: DraftCall): Promise<DraftReply>;
 };
 
@@ -286,6 +298,8 @@ export async function listModels(
 export function costUsd(usage: Usage, price: Price): number {
   return (
     (usage.inputTokens * price.inputPerMTok +
+      (usage.cachedInputTokens ?? 0) *
+        (price.cachedInputPerMTok ?? price.inputPerMTok) +
       usage.outputTokens * price.outputPerMTok) /
     1_000_000
   );

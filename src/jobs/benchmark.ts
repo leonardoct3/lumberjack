@@ -478,14 +478,20 @@ async function models(): Promise<void> {
   }
 }
 
-const PRICE = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/;
+const PRICE = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/;
 
-/** "IN/OUT" in US$ per million tokens, from the provider's price page. */
+/** "IN/OUT[/CACHED]" in US$ per million tokens, from the provider's price page. */
 function parsePrice(raw: string, name: string): Price {
   const match = PRICE.exec(raw);
   if (!match)
-    throw new Error(`${name} must be IN/OUT in US$ per million tokens, e.g. 3/15`);
-  return { inputPerMTok: Number(match[1]), outputPerMTok: Number(match[2]) };
+    throw new Error(
+      `${name} must be IN/OUT[/CACHED] in US$ per million tokens, e.g. 3/15/0.3`,
+    );
+  return {
+    inputPerMTok: Number(match[1]),
+    outputPerMTok: Number(match[2]),
+    ...(match[3] != null && { cachedInputPerMTok: Number(match[3]) }),
+  };
 }
 
 function price(name: string): Price {

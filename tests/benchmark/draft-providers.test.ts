@@ -230,4 +230,10 @@ describe("costUsd", () => {
   it("prices tokens per million", () => {
     expect(costUsd({ inputTokens: 1_000_000, outputTokens: 100_000 }, price)).toBe(3);
   });
+
+  it("charges cache reads at their own rate, or as input when none is given", () => {
+    const usage = { inputTokens: 0, cachedInputTokens: 1_000_000, outputTokens: 0 };
+    expect(costUsd(usage, { ...price, cachedInputPerMTok: 0.2 })).toBe(0.2);
+    expect(costUsd(usage, price)).toBe(2);
+  });
 });
