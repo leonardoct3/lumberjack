@@ -12,13 +12,13 @@ import {
   RateLimitError,
 } from "@cursor/sdk";
 import {
-  DraftError,
-  drafterId,
-  type Drafter,
+  ModelError,
+  clientId,
+  type ModelClient,
   type Price,
-  type Provider,
+  type Maker,
   type Usage,
-} from "./providers";
+} from "@/llm/client";
 
 export type CursorRunRequest = {
   apiKey: string;
@@ -40,23 +40,26 @@ const REJECTED =
 
 export type CursorRunner = (request: CursorRunRequest) => Promise<CursorRunResult>;
 
-/** Drafts go through Cursor's agent runtime, so the drafter must say whose model answered. */
-export function makerOf(model: string): Provider {
+/** Calls go through Cursor's agent runtime, so the client must say whose model answered. */
+export function makerOf(model: string): Maker {
   if (/^claude/i.test(model)) return "anthropic";
   if (/^(gpt|o\d|chatgpt)/i.test(model)) return "openai";
-  throw new Error(`${model} is neither an OpenAI nor an Anthropic model`);
+  if (/^gemini/i.test(model)) return "google";
+  if (/^grok/i.test(model)) return "xai";
+  if (/^composer/i.test(model)) return "cursor";
+  throw new Error(`${model} is not from a maker this tool knows`);
 }
 
 export function translateSdkError(error: unknown): unknown {
   if (!(error instanceof CursorSdkError)) return error;
   const message = `${error.name}: ${error.message}`.slice(0, 300);
   if (error instanceof AuthenticationError || error instanceof ConfigurationError) {
-    return new DraftError("fatal", message);
+    return new ModelError("fatal", message);
   }
   // A monthly usage cap is a rate limit that waiting does not lift.
   if (error instanceof RateLimitError && !error.isRetryable)
-    return new DraftError("fatal", message);
-  return new DraftError("transient", message);
+    return new ModelError("fatal", message);
+  return new ModelError("transient", message);
 }
 
 /**
@@ -119,20 +122,20 @@ export function extractJson(text: string, usage: Usage): unknown {
       // Falls through to the same error as no JSON at all.
     }
   }
-  throw new DraftError("invalid_json", "the answer held no JSON object", usage);
+  throw new ModelError("invalid_json", "the answer held no JSON object", usage);
 }
 
-export function cursorDrafter(options: {
+export function cursorClient(options: {
   key: string;
   model: string;
   params?: ModelParameterValue[];
   price: Price;
   runner?: CursorRunner;
-}): Drafter {
+}): ModelClient {
   const runner = options.runner ?? sdkRunner;
   const suffix = (options.params ?? []).map((p) => `${p.id}-${p.value}`).join("-");
   return {
-    id: drafterId("cursor", suffix ? `${options.model}-${suffix}` : options.model),
+    id: clientId("cursor", suffix ? `${options.model}-${suffix}` : options.model),
     provider: makerOf(options.model),
     route: "cursor",
     model: options.model,
@@ -140,7 +143,7 @@ export function cursorDrafter(options: {
     price: options.price,
     // Cursor's system prompt ran 15-20k tokens a call in the first smoke run.
     promptOverheadTokens: 30_000,
-    async draft(call) {
+    async complete(call) {
       const result = await runner({
         apiKey: options.key,
         model: { id: options.model, params: options.params },
@@ -149,18 +152,18 @@ export function cursorDrafter(options: {
       });
       const usage = result.usage ?? { inputTokens: 0, outputTokens: 0 };
       if (result.status === "cancelled")
-        throw new DraftError("transient", "timed out", usage);
+        throw new ModelError("transient", "timed out", usage);
       if (result.status !== "finished") {
         const { message = "no detail", code = "" } = result.error ?? {};
         const kind = REJECTED.test(`${code} ${message}`) ? "fatal" : "transient";
-        throw new DraftError(
+        throw new ModelError(
           kind,
           `run ${result.status}: ${message}`.slice(0, 300),
           usage,
         );
       }
       if (result.text == null)
-        throw new DraftError("invalid_json", "no output text", usage);
+        throw new ModelError("invalid_json", "no output text", usage);
       return { output: extractJson(result.text, usage), usage };
     },
   };

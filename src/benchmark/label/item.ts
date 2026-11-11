@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { TZ } from "@/domain/timezone";
+import { CONTEXT_WINDOWS } from "@/pipeline/context";
 import { catalogAsOf } from "../baseline";
 import type { LoadedExport } from "../dataset";
 import type { SampleItem, SplitAssignment } from "../sample";
@@ -40,10 +41,11 @@ export type ItemView = {
   availableContext: string[];
 };
 
-const HOUR_MS = 3_600_000;
-const GROUP_WINDOW_MS = 24 * HOUR_MS;
-const SENDER_WINDOW_MS = 7 * 24 * HOUR_MS;
-const WINDOW_CAP = 30;
+const {
+  groupMs: GROUP_WINDOW_MS,
+  senderMs: SENDER_WINDOW_MS,
+  cap: WINDOW_CAP,
+} = CONTEXT_WINDOWS;
 
 const local = new Intl.DateTimeFormat("pt-BR", {
   timeZone: TZ,

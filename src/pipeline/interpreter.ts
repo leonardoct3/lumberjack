@@ -5,7 +5,17 @@ export type InterpretationRequest = {
   text: string;
   sentAt: Date;
   senderRole: SenderRole;
+  /** Earlier messages, newest first; a relationship may only point at one of these. */
+  context: ContextMessage[];
   catalog: CatalogEntry[];
+};
+
+export type ContextMessage = {
+  id: string;
+  sentAt: Date;
+  text: string;
+  sameGroup: boolean;
+  sameSender: boolean;
 };
 
 export type CatalogEntry = {
@@ -13,6 +23,7 @@ export type CatalogEntry = {
   name: string;
   aliases: string[];
   status: PartyStatus;
+  eventAt: Date;
 };
 
 export type Usage = {

@@ -103,6 +103,43 @@ describe("processInterpretation", () => {
     await prisma.$disconnect();
   });
 
+  it("hands the interpreter the group's last day and the sender's last week, earlier only", async () => {
+    const send = (id: string, group: string, sender: string, hoursAgo: number) =>
+      ingestRawMessage(
+        prisma,
+        {
+          waMessageId: id,
+          groupWaId: group,
+          groupName: group,
+          senderWaId: sender,
+          senderName: null,
+          sentAt: new Date(t0.getTime() - hoursAgo * HOUR),
+          text: `msg ${id}`,
+        },
+        { interpret: id === "target" },
+      );
+    await send("same-group", "g-1", "s-other", 20);
+    await send("group-too-old", "g-1", "s-other", 30);
+    await send("same-sender", "g-2", "s-1", 100);
+    await send("sender-too-old", "g-2", "s-1", 200);
+    await send("elsewhere", "g-3", "s-3", 2);
+    await send("later", "g-1", "s-1", 0);
+    await send("target", "g-1", "s-1", 1);
+    await prisma.processingJob.updateMany({ data: { runAfter: t0 } });
+
+    let seen: InterpretationRequest | undefined;
+    await pass(
+      fake((request) => {
+        seen = request;
+        return valid(request);
+      }),
+    );
+    expect(seen!.context.map((c) => [c.text, c.sameGroup, c.sameSender])).toEqual([
+      ["msg same-group", true, false],
+      ["msg same-sender", false, true],
+    ]);
+  });
+
   it("does nothing while interpretation is off", async () => {
     await capture(1);
     const interpreter = fake(valid);

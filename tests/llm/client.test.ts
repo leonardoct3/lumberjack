@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   ANTHROPIC_VERSION,
-  anthropicDrafter,
+  anthropicClient,
   costUsd,
-  DraftError,
+  ModelError,
   listModels,
-  openaiDrafter,
-} from "@/benchmark/draft/providers";
+  openaiClient,
+} from "@/llm/client";
 
 const KEY = "sk-test-secret-key";
 const price = { inputPerMTok: 2, outputPerMTok: 10 };
@@ -32,14 +32,14 @@ function fakeFetch(
   return { fn, seen };
 }
 
-async function failureOf(promise: Promise<unknown>): Promise<DraftError> {
+async function failureOf(promise: Promise<unknown>): Promise<ModelError> {
   try {
     await promise;
   } catch (error) {
-    if (error instanceof DraftError) return error;
+    if (error instanceof ModelError) return error;
     throw error;
   }
-  throw new Error("expected a DraftError");
+  throw new Error("expected a ModelError");
 }
 
 const openaiOk = (text: string) => ({
@@ -51,11 +51,11 @@ const openaiOk = (text: string) => ({
   usage: { input_tokens: 1200, output_tokens: 300 },
 });
 
-describe("openaiDrafter", () => {
+describe("openaiClient", () => {
   it("asks for strict JSON and keeps the response out of OpenAI's store", async () => {
     const { fn, seen } = fakeFetch(200, openaiOk('{"ok":true}'));
-    const drafter = openaiDrafter({ key: KEY, model: "gpt-x", price, fetch: fn });
-    const reply = await drafter.draft(call);
+    const drafter = openaiClient({ key: KEY, model: "gpt-x", price, fetch: fn });
+    const reply = await drafter.complete(call);
 
     expect(reply).toEqual({
       output: { ok: true },
@@ -88,7 +88,7 @@ describe("openaiDrafter", () => {
       usage: { input_tokens: 10, output_tokens: 2 },
     });
     const refused = await failureOf(
-      openaiDrafter({ key: KEY, model: "m", price, fetch: refusal.fn }).draft(call),
+      openaiClient({ key: KEY, model: "m", price, fetch: refusal.fn }).complete(call),
     );
     expect(refused.kind).toBe("refusal");
     expect(refused.usage).toEqual({ inputTokens: 10, outputTokens: 2 });
@@ -99,7 +99,7 @@ describe("openaiDrafter", () => {
       usage: { input_tokens: 10, output_tokens: 500 },
     });
     const incomplete = await failureOf(
-      openaiDrafter({ key: KEY, model: "m", price, fetch: cut.fn }).draft(call),
+      openaiClient({ key: KEY, model: "m", price, fetch: cut.fn }).complete(call),
     );
     expect(incomplete.kind).toBe("incomplete");
 
@@ -107,7 +107,9 @@ describe("openaiDrafter", () => {
     expect(
       (
         await failureOf(
-          openaiDrafter({ key: KEY, model: "m", price, fetch: garbled.fn }).draft(call),
+          openaiClient({ key: KEY, model: "m", price, fetch: garbled.fn }).complete(
+            call,
+          ),
         )
       ).kind,
     ).toBe("invalid_json");
@@ -120,7 +122,7 @@ describe("openaiDrafter", () => {
       { "retry-after": "7" },
     );
     const busy = await failureOf(
-      openaiDrafter({ key: KEY, model: "m", price, fetch: limited.fn }).draft(call),
+      openaiClient({ key: KEY, model: "m", price, fetch: limited.fn }).complete(call),
     );
     expect(busy.kind).toBe("transient");
     expect(busy.retryAfterMs).toBe(7000);
@@ -135,14 +137,14 @@ describe("openaiDrafter", () => {
     expect(
       (
         await failureOf(
-          openaiDrafter({ key: KEY, model: "m", price, fetch: broke.fn }).draft(call),
+          openaiClient({ key: KEY, model: "m", price, fetch: broke.fn }).complete(call),
         )
       ).kind,
     ).toBe("fatal");
 
     const denied = fakeFetch(401, { error: { message: "Incorrect API key provided" } });
     const fatal = await failureOf(
-      openaiDrafter({ key: KEY, model: "m", price, fetch: denied.fn }).draft(call),
+      openaiClient({ key: KEY, model: "m", price, fetch: denied.fn }).complete(call),
     );
     expect(fatal.kind).toBe("fatal");
     expect(fatal.message).toBe("HTTP 401: Incorrect API key provided");
@@ -150,19 +152,19 @@ describe("openaiDrafter", () => {
   });
 });
 
-describe("anthropicDrafter", () => {
+describe("anthropicClient", () => {
   it("sends the schema as output_config with the pinned API version", async () => {
     const { fn, seen } = fakeFetch(200, {
       stop_reason: "end_turn",
       content: [{ type: "text", text: '{"ok":1}' }],
       usage: { input_tokens: 900, output_tokens: 100 },
     });
-    const reply = await anthropicDrafter({
+    const reply = await anthropicClient({
       key: KEY,
       model: "claude-x",
       price,
       fetch: fn,
-    }).draft(call);
+    }).complete(call);
 
     expect(reply).toEqual({
       output: { ok: 1 },
@@ -207,7 +209,7 @@ describe("anthropicDrafter", () => {
       kinds.push(
         (
           await failureOf(
-            anthropicDrafter({ key: KEY, model: "m", price, fetch: fn }).draft(call),
+            anthropicClient({ key: KEY, model: "m", price, fetch: fn }).complete(call),
           )
         ).kind,
       );

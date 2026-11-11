@@ -1,4 +1,7 @@
+/** Providers whose API this module calls directly. */
 export type Provider = "openai" | "anthropic";
+/** Whose model answers, whichever route the call takes. */
+export type Maker = Provider | "google" | "xai" | "cursor";
 
 export type Price = {
   inputPerMTok: number;
@@ -7,10 +10,12 @@ export type Price = {
   cachedInputPerMTok?: number;
 };
 
-export type DraftCall = {
+export type ModelCall = {
   system: string;
   user: string;
   schema: Record<string, unknown>;
+  /** Named in OpenAI's request; letters, digits, _ and - only. */
+  schemaName?: string;
   maxOutputTokens: number;
   signal?: AbortSignal;
 };
@@ -22,18 +27,18 @@ export type Usage = {
   cachedInputTokens?: number;
 };
 
-export type DraftReply = { output: unknown; usage: Usage };
+export type ModelReply = { output: unknown; usage: Usage };
 
 /**
  * transient: worth retrying. refusal and incomplete: the model answered but
- * not with a label. fatal: retrying cannot help (bad key, bad request).
+ * not with an answer. fatal: retrying cannot help (bad key, bad request).
  */
-export type DraftErrorKind =
+export type ModelErrorKind =
   "transient" | "refusal" | "incomplete" | "invalid_json" | "fatal";
 
-export class DraftError extends Error {
+export class ModelError extends Error {
   constructor(
-    readonly kind: DraftErrorKind,
+    readonly kind: ModelErrorKind,
     message: string,
     readonly usage?: Usage,
     readonly retryAfterMs?: number,
@@ -42,11 +47,11 @@ export class DraftError extends Error {
   }
 }
 
-export type Drafter = {
-  /** Also the annotator and the draft file name. */
+export type ModelClient = {
+  /** Also the annotator and file name of what it writes. */
   id: string;
-  /** Whose model answers, which is what makes two drafts independent. */
-  provider: Provider;
+  /** Whose model answers, which is what makes two answers independent. */
+  provider: Maker;
   /** How the call gets there: the provider's own API, or Cursor's agent runtime. */
   route: "api" | "cursor";
   model: string;
@@ -54,7 +59,7 @@ export type Drafter = {
   price: Price;
   /** Input the route adds on its own, so the budget reservation stays an upper bound. */
   promptOverheadTokens?: number;
-  draft(call: DraftCall): Promise<DraftReply>;
+  complete(call: ModelCall): Promise<ModelReply>;
 };
 
 type Fetch = typeof fetch;
@@ -63,11 +68,11 @@ export const ANTHROPIC_VERSION = "2026-10-21";
 
 const ENDPOINTS = {
   openai: {
-    draft: "https://api.openai.com/v1/responses",
+    complete: "https://api.openai.com/v1/responses",
     models: "https://api.openai.com/v1/models",
   },
   anthropic: {
-    draft: "https://api.anthropic.com/v1/messages",
+    complete: "https://api.anthropic.com/v1/messages",
     models: "https://api.anthropic.com/v1/models?limit=1000",
   },
 };
@@ -82,7 +87,7 @@ function headers(provider: Provider, key: string): Record<string, string> {
       };
 }
 
-export function drafterId(prefix: string, model: string): string {
+export function clientId(prefix: string, model: string): string {
   return `${prefix}-${model}`
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
@@ -90,7 +95,7 @@ export function drafterId(prefix: string, model: string): string {
 }
 
 /** Error bodies name the problem, never the key, so their message is safe to surface. */
-async function failure(response: Response): Promise<DraftError> {
+async function failure(response: Response): Promise<ModelError> {
   let detail = "";
   let code: unknown;
   try {
@@ -115,7 +120,7 @@ async function failure(response: Response): Promise<DraftError> {
       response.status === 409 ||
       response.status === 429 ||
       response.status >= 500);
-  return new DraftError(
+  return new ModelError(
     transient ? "transient" : "fatal",
     message,
     undefined,
@@ -132,15 +137,15 @@ async function post(
 ) {
   let response: Response;
   try {
-    response = await fetchFn(ENDPOINTS[provider].draft, {
+    response = await fetchFn(ENDPOINTS[provider].complete, {
       method: "POST",
       headers: headers(provider, key),
       body: JSON.stringify(body),
       signal,
     });
   } catch (error) {
-    if (signal?.aborted) throw new DraftError("transient", "timed out");
-    throw new DraftError("transient", `network error: ${(error as Error).message}`);
+    if (signal?.aborted) throw new ModelError("transient", "timed out");
+    throw new ModelError("transient", `network error: ${(error as Error).message}`);
   }
   if (!response.ok) throw await failure(response);
   return (await response.json()) as Record<string, unknown>;
@@ -150,7 +155,7 @@ function parseJson(text: string, usage: Usage): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    throw new DraftError("invalid_json", "the answer was not valid JSON", usage);
+    throw new ModelError("invalid_json", "the answer was not valid JSON", usage);
   }
 }
 
@@ -164,20 +169,20 @@ type OpenAIResponse = {
   usage?: { input_tokens?: number; output_tokens?: number };
 };
 
-export function openaiDrafter(options: {
+export function openaiClient(options: {
   key: string;
   model: string;
   price: Price;
   fetch?: Fetch;
-}): Drafter {
+}): ModelClient {
   const fetchFn = options.fetch ?? fetch;
   return {
-    id: drafterId("openai", options.model),
+    id: clientId("openai", options.model),
     provider: "openai",
     route: "api",
     model: options.model,
     price: options.price,
-    async draft(call) {
+    async complete(call) {
       const body = (await post(
         fetchFn,
         "openai",
@@ -191,7 +196,7 @@ export function openaiDrafter(options: {
           text: {
             format: {
               type: "json_schema",
-              name: "label_draft",
+              name: call.schemaName ?? "answer",
               schema: call.schema,
               strict: true,
             },
@@ -207,7 +212,7 @@ export function openaiDrafter(options: {
         outputTokens: body.usage?.output_tokens ?? 0,
       };
       if (body.status === "incomplete") {
-        throw new DraftError(
+        throw new ModelError(
           "incomplete",
           `incomplete: ${body.incomplete_details?.reason ?? "unknown"}`,
           usage,
@@ -217,9 +222,9 @@ export function openaiDrafter(options: {
         .filter((o) => o.type === "message")
         .flatMap((o) => o.content ?? []);
       if (parts.some((p) => p.type === "refusal"))
-        throw new DraftError("refusal", "the model refused", usage);
+        throw new ModelError("refusal", "the model refused", usage);
       const text = parts.find((p) => p.type === "output_text")?.text;
-      if (text == null) throw new DraftError("invalid_json", "no output text", usage);
+      if (text == null) throw new ModelError("invalid_json", "no output text", usage);
       return { output: parseJson(text, usage), usage };
     },
   };
@@ -231,20 +236,20 @@ type AnthropicResponse = {
   usage?: { input_tokens?: number; output_tokens?: number };
 };
 
-export function anthropicDrafter(options: {
+export function anthropicClient(options: {
   key: string;
   model: string;
   price: Price;
   fetch?: Fetch;
-}): Drafter {
+}): ModelClient {
   const fetchFn = options.fetch ?? fetch;
   return {
-    id: drafterId("anthropic", options.model),
+    id: clientId("anthropic", options.model),
     provider: "anthropic",
     route: "api",
     model: options.model,
     price: options.price,
-    async draft(call) {
+    async complete(call) {
       const body = (await post(
         fetchFn,
         "anthropic",
@@ -263,11 +268,11 @@ export function anthropicDrafter(options: {
         outputTokens: body.usage?.output_tokens ?? 0,
       };
       if (body.stop_reason === "refusal")
-        throw new DraftError("refusal", "the model refused", usage);
+        throw new ModelError("refusal", "the model refused", usage);
       if (body.stop_reason === "max_tokens")
-        throw new DraftError("incomplete", "incomplete: max_tokens", usage);
+        throw new ModelError("incomplete", "incomplete: max_tokens", usage);
       const text = (body.content ?? []).find((c) => c.type === "text")?.text;
-      if (text == null) throw new DraftError("invalid_json", "no output text", usage);
+      if (text == null) throw new ModelError("invalid_json", "no output text", usage);
       return { output: parseJson(text, usage), usage };
     },
   };
@@ -285,7 +290,7 @@ export async function listModels(
       headers: headers(provider, key),
     });
   } catch (error) {
-    throw new DraftError("transient", `network error: ${(error as Error).message}`);
+    throw new ModelError("transient", `network error: ${(error as Error).message}`);
   }
   if (!response.ok) throw await failure(response);
   const body = (await response.json()) as { data?: { id?: unknown }[] };

@@ -5,7 +5,13 @@ import { validateInterpretation } from "@/pipeline/observation";
 
 const sentAt = new Date("2026-09-16T15:00:00Z");
 const catalog: InterpretationRequest["catalog"] = [
-  { id: "p1", name: "Festa Junina", aliases: ["junina"], status: "upcoming" },
+  {
+    id: "p1",
+    name: "Festa Junina",
+    aliases: ["junina"],
+    status: "upcoming",
+    eventAt: new Date("2026-10-17T23:00:00Z"),
+  },
 ];
 
 async function read(
@@ -13,10 +19,10 @@ async function read(
   senderRole: InterpretationRequest["senderRole"] = "unknown",
 ) {
   const { output } = await rulesInterpreter.interpret(
-    { text, sentAt, senderRole, catalog },
+    { text, sentAt, senderRole, context: [], catalog },
     new AbortController().signal,
   );
-  const checked = validateInterpretation(output, text);
+  const checked = validateInterpretation(output, { text, context: [] });
   expect(checked.errors).toEqual([]);
   return checked.observations!;
 }

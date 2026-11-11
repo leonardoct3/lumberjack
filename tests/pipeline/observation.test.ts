@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateInterpretation } from "@/pipeline/observation";
 
 const text = "vendo 2 pista onix R$ 250, e compro 1 camarote";
+const request = { text, context: [{ id: "msg_earlier" }] };
 
 const offer = {
   intent: "offer",
@@ -27,13 +28,16 @@ describe("validateInterpretation", () => {
       spans: [{ start: 29, end: 46, text: "compro 1 camarote" }],
       ambiguities: ["camarote of which event"],
     };
-    const result = validateInterpretation({ observations: [offer, demand] }, text);
+    const result = validateInterpretation({ observations: [offer, demand] }, request);
     expect(result.errors).toEqual([]);
     expect(result.observations).toHaveLength(2);
   });
 
   it("rejects output that does not fit the schema", () => {
-    const result = validateInterpretation({ observations: [{ intent: "sell" }] }, text);
+    const result = validateInterpretation(
+      { observations: [{ intent: "sell" }] },
+      request,
+    );
     expect(result.observations).toBeNull();
     expect(result.errors.length).toBeGreaterThan(0);
   });
@@ -48,7 +52,7 @@ describe("validateInterpretation", () => {
           },
         ],
       },
-      text,
+      request,
     );
     expect(result.observations).toBeNull();
     expect(result.errors).toEqual([
@@ -58,14 +62,27 @@ describe("validateInterpretation", () => {
 
   it("rejects an observation without evidence unless the message is unrelated", () => {
     expect(
-      validateInterpretation({ observations: [{ ...offer, spans: [] }] }, text).errors,
+      validateInterpretation({ observations: [{ ...offer, spans: [] }] }, request)
+        .errors,
     ).toEqual(["observations[0] needs at least one supporting span"]);
     expect(
       validateInterpretation(
         { observations: [{ ...offer, intent: "unrelated", spans: [] }] },
-        text,
+        request,
       ).errors,
     ).toEqual([]);
+  });
+
+  it("lets a relationship point only at an earlier message it was given", () => {
+    const linked = (relatedMessage: string) => ({
+      observations: [
+        { ...offer, relationship: { kind: "renewed_intent", relatedMessage } },
+      ],
+    });
+    expect(validateInterpretation(linked("msg_earlier"), request).errors).toEqual([]);
+    expect(validateInterpretation(linked("msg_elsewhere"), request).errors).toEqual([
+      "observations[0].relationship.relatedMessage msg_elsewhere is not an earlier message id",
+    ]);
   });
 
   it("rejects impossible dates instead of storing them", () => {
@@ -75,7 +92,7 @@ describe("validateInterpretation", () => {
           { ...offer, eventDate: { year: null, month: 2, day: 31, basis: "explicit" } },
         ],
       },
-      text,
+      request,
     );
     expect(result.errors).toEqual(["observations[0].eventDate is not a calendar date"]);
   });
