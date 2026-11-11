@@ -41,7 +41,7 @@
     disagreement: "drafts disagree",
     missing_draft: "a draft is missing",
     test: "held-out test",
-    audit: "audit of an agreement",
+    audit: "audit: both drafts agree",
   };
 
   const state = {
@@ -678,8 +678,26 @@
           ? el("span", { class: "badge warn", text: "excluded: " + item.excluded })
           : null,
         item.labeled ? el("span", { class: "badge done", text: "labeled" }) : null,
+        item.required === false
+          ? el("span", { class: "badge", text: "optional" })
+          : null,
       ),
     );
+    const required = state.queue.filter((i) => i.required);
+    if (required.length > 0) {
+      const done = required.filter((i) => i.labeled).length;
+      $("progress").textContent =
+        "required " +
+        done +
+        "/" +
+        required.length +
+        (done === required.length ? " · done, the rest is optional" : "") +
+        " · all " +
+        p.labeled +
+        "/" +
+        p.total;
+      return;
+    }
     const parts = Object.entries(p.bySet).map(
       ([k, t]) => k + " " + t.labeled + "/" + t.total,
     );
@@ -728,6 +746,14 @@
     $("status").textContent = data.label
       ? "saved " + data.label.annotatedAt.slice(0, 16).replace("T", " ")
       : "";
+    const agreed = state.review && state.review.differing.length === 0;
+    const draft = state.review && state.review.drafts[0];
+    if (!data.label && agreed && draft) {
+      state.obs = draft.observations.map(fromAnnotation);
+      state.used = new Set(draft.contextUsed);
+      $("needs-review").checked = draft.needsReview;
+      $("status").textContent = "both drafts agree: check it, then s to save";
+    }
     renderAll();
     window.scrollTo(0, 0);
   }

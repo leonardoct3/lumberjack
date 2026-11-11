@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -33,6 +34,7 @@ import {
 import {
   auditReport,
   buildReviewPlan,
+  COMPARE_VERSION,
   type ReviewPlan,
 } from "@/benchmark/draft/compare";
 import { cursorDrafter, listCursorModels } from "@/benchmark/draft/cursor";
@@ -521,7 +523,7 @@ function loadReview(sampleDir: string, items: LabelItem[], seed: string) {
     return createLabelStore(file).latest();
   }) as [Map<string, Annotation>, Map<string, Annotation>];
   const planFile = path.join(sampleDir, "review", "plan.json");
-  let plan: ReviewPlan;
+  let plan: ReviewPlan | undefined;
   if (existsSync(planFile)) {
     plan = JSON.parse(readFileSync(planFile, "utf8")) as ReviewPlan;
     if (plan.drafters.join() !== ids.join()) {
@@ -529,7 +531,14 @@ function loadReview(sampleDir: string, items: LabelItem[], seed: string) {
         `${planFile} was planned for ${plan.drafters.join(",")}, not ${ids.join(",")}`,
       );
     }
-  } else {
+    if (plan.compareVersion !== COMPARE_VERSION) {
+      const kept = planFile.replace(/\.json$/, `-v${plan.compareVersion ?? 1}.json`);
+      renameSync(planFile, kept);
+      console.error(`compared differently since; kept the old plan as ${kept}`);
+      plan = undefined;
+    }
+  }
+  if (!plan) {
     plan = buildReviewPlan({
       items,
       drafts: [

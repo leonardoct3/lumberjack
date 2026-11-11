@@ -19,6 +19,18 @@ export type ComparedField = (typeof COMPARED_FIELDS)[number];
 
 type Observation = Annotation["observations"][number];
 
+export const COMPARE_VERSION = 2;
+
+/**
+ * Only what the message writes counts: an empty or "absent" date is no date, and an
+ * inferred one is the linked event's date, which the party comparison already covers.
+ */
+function writtenDate(date: Observation["eventDate"]) {
+  if (!date || date.basis !== "explicit") return null;
+  if (date.year == null && date.month == null && date.day == null) return null;
+  return [date.year, date.month, date.day];
+}
+
 /**
  * What a benchmark scores, read off one observation. Spans, ambiguities and
  * notes are left out: two right answers can quote or explain differently.
@@ -33,8 +45,7 @@ const readers: Record<
   category: (o) => o.ticketCategory?.trim().toLowerCase() || null,
   quantity: (o) => o.quantity,
   price: (o) => (o.price ? [o.price.amount, o.price.currency, o.price.meaning] : null),
-  date: (o) =>
-    o.eventDate ? [o.eventDate.year, o.eventDate.month, o.eventDate.day] : null,
+  date: (o) => writtenDate(o.eventDate),
   relationship: (o) => [o.relationship.kind, o.relationship.relatedMessage],
 };
 
@@ -59,15 +70,20 @@ export type ReviewEntry = {
   messageId: string;
   reasons: ReviewReason[];
   differing: ComparedField[];
+  required?: boolean;
 };
 
 export type ReviewPlan = {
+  compareVersion?: number;
   drafters: [string, string];
   auditSize: number;
   review: ReviewEntry[];
   /** Agreed, outside the test split and not audited: these are trusted without review. */
   silver: string[];
-  counts: Record<"usable" | "agreed" | "review" | "silver" | ReviewReason, number>;
+  counts: Record<
+    "usable" | "agreed" | "review" | "required" | "silver" | ReviewReason,
+    number
+  >;
 };
 
 /**
@@ -120,10 +136,20 @@ export function buildReviewPlan(options: {
     .filter((i) => !auditedIds.has(i.messageId))
     .map((i) => i.messageId);
 
-  const review = [...entries.values()];
+  // Required first: the test split and the audit. A contested item outside the test
+  // split is optional, and left out of silver whether or not anyone reviews it.
+  const priority = (e: ReviewEntry) =>
+    e.reasons.includes("test") ? 0 : e.reasons.includes("audit") ? 1 : 2;
+  const review = [...entries.values()]
+    .map((e) => ({ ...e, required: priority(e) < 2 }))
+    .sort(
+      (x, y) =>
+        priority(x) - priority(y) || rank(x.messageId).localeCompare(rank(y.messageId)),
+    );
   const count = (reason: ReviewReason) =>
     review.filter((e) => e.reasons.includes(reason)).length;
   return {
+    compareVersion: COMPARE_VERSION,
     drafters: [a.id, b.id],
     auditSize: options.auditSize,
     review,
@@ -132,6 +158,7 @@ export function buildReviewPlan(options: {
       usable: usable.length,
       agreed: agreed.length,
       review: review.length,
+      required: review.filter((e) => e.required).length,
       silver: silver.length,
       disagreement: count("disagreement"),
       missing_draft: count("missing_draft"),

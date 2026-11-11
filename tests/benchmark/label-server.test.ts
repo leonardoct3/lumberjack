@@ -166,6 +166,7 @@ describe("label server", () => {
         excluded: null,
         labeled: false,
         reasons: null,
+        required: null,
       },
     ]);
     expect(queue.review).toBe(false);

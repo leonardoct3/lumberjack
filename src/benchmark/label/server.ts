@@ -109,12 +109,10 @@ export async function startLabelServer(options: LabelServerOptions) {
   const reviewing = new Map(
     (options.review?.plan.review ?? []).map((entry) => [entry.messageId, entry]),
   );
-  const queue = labelQueue(
-    options.review
-      ? options.items.filter((i) => reviewing.has(i.messageId))
-      : options.items,
-    options.seed,
-  );
+  const byId = new Map(options.items.map((i) => [i.messageId, i]));
+  const queue = options.review
+    ? options.review.plan.review.flatMap((e) => byId.get(e.messageId) ?? [])
+    : labelQueue(options.items, options.seed);
   const items = new Map(queue.map((item) => [item.messageId, item]));
   const views = new Map<string, ItemView>();
   const viewOf = (item: LabelItem) => {
@@ -157,6 +155,7 @@ export async function startLabelServer(options: LabelServerOptions) {
           excluded: i.excluded,
           labeled: labeled.has(i.messageId),
           reasons: reviewing.get(i.messageId)?.reasons ?? null,
+          required: reviewing.get(i.messageId)?.required ?? null,
         })),
         progress: progress(queue, labeled),
       });
@@ -175,6 +174,7 @@ export async function startLabelServer(options: LabelServerOptions) {
           options.review && entry
             ? {
                 reasons: entry.reasons,
+                required: entry.required ?? true,
                 differing: entry.differing,
                 drafts: options.review.drafts.map((d) =>
                   draftView(d.get(item.messageId)),

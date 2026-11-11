@@ -52,6 +52,18 @@ describe("compareAnnotations", () => {
     expect(compareAnnotations(a, b)).toEqual([]);
   });
 
+  it("compares only dates the message writes", () => {
+    const none = annotation("m", [obs({ eventDate: null })]);
+    const absent = annotation("m", [
+      obs({ eventDate: { year: null, month: null, day: null, basis: "absent" } }),
+    ]);
+    const inferred = annotation("m", [
+      obs({ eventDate: { year: 2026, month: 10, day: 17, basis: "inferred" } }),
+    ]);
+    expect(compareAnnotations(none, absent)).toEqual([]);
+    expect(compareAnnotations(none, inferred)).toEqual([]);
+  });
+
   it("names every scored field that differs", () => {
     const a = annotation("m", [obs()]);
     const b = annotation("m", [
@@ -107,6 +119,13 @@ describe("buildReviewPlan", () => {
       disagreement: 1,
       missing_draft: 1,
     });
+  });
+
+  it("puts the required test split and audit first, contested items last and optional", () => {
+    const required = plan.review.map((e) => e.required);
+    expect(required).toEqual([true, true, true, true, true, false, false]);
+    expect(plan.review.slice(0, 2).every((e) => e.reasons.includes("test"))).toBe(true);
+    expect(plan.counts.required).toBe(5);
   });
 
   it("keeps the rest as silver, never the test split or an excluded item", () => {
