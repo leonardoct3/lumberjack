@@ -35,8 +35,12 @@ export class DraftError extends Error {
 export type Drafter = {
   /** Also the annotator and the draft file name. */
   id: string;
+  /** Whose model answers, which is what makes two drafts independent. */
   provider: Provider;
+  /** How the call gets there: the provider's own API, or Cursor's agent runtime. */
+  route: "api" | "cursor";
   model: string;
+  params?: { id: string; value: string }[];
   price: Price;
   draft(call: DraftCall): Promise<DraftReply>;
 };
@@ -66,8 +70,8 @@ function headers(provider: Provider, key: string): Record<string, string> {
       };
 }
 
-export function drafterId(provider: Provider, model: string): string {
-  return `${provider}-${model}`
+export function drafterId(prefix: string, model: string): string {
+  return `${prefix}-${model}`
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .slice(0, 64);
@@ -158,6 +162,7 @@ export function openaiDrafter(options: {
   return {
     id: drafterId("openai", options.model),
     provider: "openai",
+    route: "api",
     model: options.model,
     price: options.price,
     async draft(call) {
@@ -224,6 +229,7 @@ export function anthropicDrafter(options: {
   return {
     id: drafterId("anthropic", options.model),
     provider: "anthropic",
+    route: "api",
     model: options.model,
     price: options.price,
     async draft(call) {

@@ -25,7 +25,10 @@ import {
 } from "./providers";
 import { DRAFT_JSON_SCHEMA, draftToLabelBody } from "./schema";
 
-export const RETENTION = "provider default, unverified";
+export const RETENTION: Record<Drafter["route"], string> = {
+  api: "provider default, unverified",
+  cursor: "Cursor Privacy Mode and provider default, unverified",
+};
 
 export type DraftRunOptions = {
   data: LoadedExport;
@@ -52,8 +55,11 @@ type FailureKind = DraftErrorKind | "invalid";
 export type DrafterReport = {
   id: string;
   provider: Drafter["provider"];
+  route: Drafter["route"];
   model: string;
+  params: Drafter["params"] | null;
   price: Drafter["price"];
+  retention: string;
   alreadyDrafted: number;
   attempted: number;
   drafted: number;
@@ -71,7 +77,6 @@ export type DraftRunReport = {
   schemaVersion: number;
   exportManifestSha256: string;
   sampleSeed: string;
-  retention: string;
   startedAt: string;
   finishedAt: string;
   budgetUsd: number;
@@ -116,8 +121,11 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
     stats.set(drafter.id, {
       id: drafter.id,
       provider: drafter.provider,
+      route: drafter.route,
       model: drafter.model,
+      params: drafter.params ?? null,
       price: drafter.price,
+      retention: RETENTION[drafter.route],
       alreadyDrafted: store.latest().size,
       attempted: 0,
       drafted: 0,
@@ -297,7 +305,6 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
     schemaVersion: ANNOTATION_SCHEMA_VERSION,
     exportManifestSha256: options.meta.exportManifestSha256,
     sampleSeed: options.seed,
-    retention: RETENTION,
     startedAt: startedAt.toISOString(),
     finishedAt: now().toISOString(),
     budgetUsd: options.budgetUsd,

@@ -39,6 +39,7 @@ function fakeDrafter(
   return {
     id,
     provider: id.startsWith("openai") ? "openai" : "anthropic",
+    route: "api",
     model: id,
     price: { inputPerMTok: 1, outputPerMTok: 1 },
     calls,
@@ -91,15 +92,16 @@ describe("runDrafts", () => {
       expect(new Set(drafts.map((d) => d.annotator))).toEqual(new Set([drafter.id]));
     }
     expect(report).toMatchObject({
-      retention: RETENTION,
       stoppedForBudget: false,
       abortedBy: null,
       spentUsd: 0.012,
     });
-    expect(report.drafters.map((d) => [d.id, d.drafted, d.calls])).toEqual([
-      ["openai-a", 3, 3],
-      ["anthropic-b", 3, 3],
-    ]);
+    expect(report.drafters.map((d) => [d.id, d.drafted, d.calls, d.retention])).toEqual(
+      [
+        ["openai-a", 3, 3, RETENTION.api],
+        ["anthropic-b", 3, 3, RETENTION.api],
+      ],
+    );
     const manifest = readdirSync(dir).find((f) => f.startsWith("run-"))!;
     expect(JSON.parse(readFileSync(path.join(dir, manifest), "utf8"))).toEqual(report);
   });

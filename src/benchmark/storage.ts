@@ -37,7 +37,7 @@ export function assertOutsideRepo(
 
 /** Provider keys follow the pseudonym key: a file outside the repository, named by an env var. */
 export function loadApiKey(
-  envName: "OPENAI_API_KEY_FILE" | "ANTHROPIC_API_KEY_FILE",
+  envName: "OPENAI_API_KEY_FILE" | "ANTHROPIC_API_KEY_FILE" | "CURSOR_API_KEY_FILE",
   env: Record<string, string | undefined> = process.env,
   repoRoot: string = REPO_ROOT,
 ): string {

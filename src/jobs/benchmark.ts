@@ -24,6 +24,7 @@ import {
   openaiDrafter,
   type Price,
 } from "@/benchmark/draft/providers";
+import { cursorDrafter, listCursorModels } from "@/benchmark/draft/cursor";
 import { runDrafts } from "@/benchmark/draft/run";
 import { exportDataset } from "@/benchmark/export";
 import { buildInventory } from "@/benchmark/inventory";
@@ -61,11 +62,12 @@ const USAGE = `Usage: npm run bench -- <command> [options]
   models
   draft     --export DIR --sample DIR --budget-usd N
             [--openai MODEL --openai-price IN/OUT] [--anthropic MODEL --anthropic-price IN/OUT]
-            [--limit N] [--concurrency 4]
+            [--cursor MODEL[,param=value...]@IN/OUT]... [--limit N] [--concurrency 4]
   schema
 
 Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.
-API keys are read from the files named by OPENAI_API_KEY_FILE and ANTHROPIC_API_KEY_FILE.`;
+API keys are read from the files named by OPENAI_API_KEY_FILE, ANTHROPIC_API_KEY_FILE and
+CURSOR_API_KEY_FILE.`;
 
 function argValue(name: string): string | undefined {
   const at = process.argv.indexOf(name);
@@ -447,6 +449,7 @@ async function label(): Promise<void> {
 const KEY_FILES = {
   openai: "OPENAI_API_KEY_FILE",
   anthropic: "ANTHROPIC_API_KEY_FILE",
+  cursor: "CURSOR_API_KEY_FILE",
 } as const;
 
 /** What each key can reach, so a person picks the strongest model before anything is spent. */
@@ -461,14 +464,55 @@ async function models(): Promise<void> {
       `${provider} (${ids.length}):\n${ids.map((id) => `  ${id}`).join("\n")}`,
     );
   }
+  if (!process.env[KEY_FILES.cursor]) {
+    console.log(`cursor: ${KEY_FILES.cursor} not set, skipped`);
+    return;
+  }
+  const cursorModels = await listCursorModels(loadApiKey(KEY_FILES.cursor));
+  console.log(`cursor (${cursorModels.length}):`);
+  for (const model of cursorModels) {
+    const params = model.parameters
+      .map((p) => `${p.id}=${p.values.join("|")}`)
+      .join(" ");
+    console.log(`  ${model.id}${params ? `  ${params}` : ""}`);
+  }
 }
 
+const PRICE = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/;
+
 /** "IN/OUT" in US$ per million tokens, from the provider's price page. */
-function price(name: string): Price {
-  const match = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/.exec(required(name));
+function parsePrice(raw: string, name: string): Price {
+  const match = PRICE.exec(raw);
   if (!match)
     throw new Error(`${name} must be IN/OUT in US$ per million tokens, e.g. 3/15`);
   return { inputPerMTok: Number(match[1]), outputPerMTok: Number(match[2]) };
+}
+
+function price(name: string): Price {
+  return parsePrice(required(name), name);
+}
+
+function argValues(name: string): string[] {
+  return process.argv.flatMap((arg, i) =>
+    arg === name && process.argv[i + 1] ? [process.argv[i + 1]] : [],
+  );
+}
+
+/** `MODEL[,param=value...]@IN/OUT`, e.g. `claude-opus-5-5,thinking=high@5/25`. */
+function cursorSpec(raw: string) {
+  const at = raw.lastIndexOf("@");
+  if (at < 0) throw new Error(`--cursor ${raw} needs @IN/OUT prices`);
+  const [model, ...pairs] = raw.slice(0, at).split(",");
+  const params = pairs.map((pair) => {
+    const [id, value] = pair.split("=");
+    if (!id || !value) throw new Error(`--cursor parameter ${pair} must be id=value`);
+    return { id, value };
+  });
+  return {
+    model,
+    params: params.length > 0 ? params : undefined,
+    price: parsePrice(raw.slice(at + 1), "--cursor"),
+  };
 }
 
 /** Two providers draft every item independently; nothing here is gold until a person reviews it. */
@@ -480,10 +524,15 @@ async function draft(): Promise<void> {
   // Providers can run separately: each drafts into its own file and resumes there.
   const openaiModel = argValue("--openai");
   const anthropicModel = argValue("--anthropic");
-  if (!openaiModel && !anthropicModel) {
-    throw new Error(`Pass --openai, --anthropic or both.\n\n${USAGE}`);
+  const viaCursor = argValues("--cursor").map(cursorSpec);
+  if (!openaiModel && !anthropicModel && viaCursor.length === 0) {
+    throw new Error(
+      `Pass at least one of --openai, --anthropic, --cursor.\n\n${USAGE}`,
+    );
   }
+  const cursorKey = viaCursor.length > 0 ? loadApiKey(KEY_FILES.cursor) : "";
   const drafters = [
+    ...viaCursor.map((spec) => cursorDrafter({ key: cursorKey, ...spec })),
     ...(openaiModel
       ? [
           openaiDrafter({
