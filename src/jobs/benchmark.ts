@@ -18,6 +18,13 @@ import {
   type BaselinePrediction,
 } from "@/benchmark/baseline";
 import { loadExport, readJsonl } from "@/benchmark/dataset";
+import {
+  anthropicDrafter,
+  listModels,
+  openaiDrafter,
+  type Price,
+} from "@/benchmark/draft/providers";
+import { runDrafts } from "@/benchmark/draft/run";
 import { exportDataset } from "@/benchmark/export";
 import { buildInventory } from "@/benchmark/inventory";
 import type { LabelItem } from "@/benchmark/label/item";
@@ -35,7 +42,12 @@ import {
   type SplitAssignment,
 } from "@/benchmark/sample";
 import { createJsonlSink } from "@/benchmark/sink";
-import { assertOutsideRepo, loadPseudonymKey, REPO_ROOT } from "@/benchmark/storage";
+import {
+  assertOutsideRepo,
+  loadApiKey,
+  loadPseudonymKey,
+  REPO_ROOT,
+} from "@/benchmark/storage";
 import { startOfDaySp } from "@/domain/timezone";
 
 const USAGE = `Usage: npm run bench -- <command> [options]
@@ -46,9 +58,14 @@ const USAGE = `Usage: npm run bench -- <command> [options]
             [--random-size 300] [--per-tag 15]
   baseline  --export DIR --out DIR [--sample DIR] [--gold FILE]
   label     --export DIR --sample DIR --annotator ID [--port 4319]
+  models
+  draft     --export DIR --sample DIR --budget-usd N
+            --openai MODEL --openai-price IN/OUT --anthropic MODEL --anthropic-price IN/OUT
+            [--limit N] [--concurrency 4]
   schema
 
-Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.`;
+Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.
+API keys are read from the files named by OPENAI_API_KEY_FILE and ANTHROPIC_API_KEY_FILE.`;
 
 function argValue(name: string): string | undefined {
   const at = process.argv.indexOf(name);
@@ -383,28 +400,34 @@ async function baseline(): Promise<void> {
   console.error(`wrote ${outDir}`);
 }
 
-/** Blind labelling on loopback: the page never shows what the rules decided. */
-async function label(): Promise<void> {
+function loadSample() {
   const exportDir = assertOutsideRepo(required("--export"));
   const sampleDir = assertOutsideRepo(required("--sample"));
+  const manifest = JSON.parse(
+    readFileSync(path.join(sampleDir, "sample-manifest.json"), "utf8"),
+  ) as { seed: string; exportManifestSha256: string };
+  if (
+    manifest.exportManifestSha256 !== sha256File(path.join(exportDir, "manifest.json"))
+  ) {
+    throw new Error("This sample was drawn from a different export.");
+  }
+  return {
+    sampleDir,
+    manifest,
+    data: loadExport(exportDir),
+    items: readJsonl<LabelItem>(path.join(sampleDir, "sample.jsonl")),
+  };
+}
+
+/** Blind labelling on loopback: the page never shows what the rules decided. */
+async function label(): Promise<void> {
   const annotator = required("--annotator");
   if (!/^[a-z0-9_-]{2,32}$/.test(annotator)) {
     throw new Error(
       "--annotator must be a pseudonym: 2-32 lowercase letters, digits, - or _",
     );
   }
-  const sampleManifest = JSON.parse(
-    readFileSync(path.join(sampleDir, "sample-manifest.json"), "utf8"),
-  ) as { seed: string; exportManifestSha256: string };
-  if (
-    sampleManifest.exportManifestSha256 !==
-    sha256File(path.join(exportDir, "manifest.json"))
-  ) {
-    throw new Error("This sample was drawn from a different export.");
-  }
-
-  const data = loadExport(exportDir);
-  const items = readJsonl<LabelItem>(path.join(sampleDir, "sample.jsonl"));
+  const { sampleDir, manifest: sampleManifest, data, items } = loadSample();
   const store = createLabelStore(path.join(sampleDir, "labels", `${annotator}.jsonl`));
   const server = await startLabelServer({
     data,
@@ -421,12 +444,76 @@ async function label(): Promise<void> {
   await server.close();
 }
 
+const KEY_FILES = {
+  openai: "OPENAI_API_KEY_FILE",
+  anthropic: "ANTHROPIC_API_KEY_FILE",
+} as const;
+
+/** What each key can reach, so a person picks the strongest model before anything is spent. */
+async function models(): Promise<void> {
+  for (const provider of ["openai", "anthropic"] as const) {
+    if (!process.env[KEY_FILES[provider]]) {
+      console.log(`${provider}: ${KEY_FILES[provider]} not set, skipped`);
+      continue;
+    }
+    const ids = await listModels(provider, loadApiKey(KEY_FILES[provider]));
+    console.log(
+      `${provider} (${ids.length}):\n${ids.map((id) => `  ${id}`).join("\n")}`,
+    );
+  }
+}
+
+/** "IN/OUT" in US$ per million tokens, from the provider's price page. */
+function price(name: string): Price {
+  const match = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/.exec(required(name));
+  if (!match)
+    throw new Error(`${name} must be IN/OUT in US$ per million tokens, e.g. 3/15`);
+  return { inputPerMTok: Number(match[1]), outputPerMTok: Number(match[2]) };
+}
+
+/** Two providers draft every item independently; nothing here is gold until a person reviews it. */
+async function draft(): Promise<void> {
+  const budgetUsd = Number(required("--budget-usd"));
+  if (!Number.isFinite(budgetUsd) || budgetUsd <= 0)
+    throw new Error("--budget-usd must be positive");
+  const { sampleDir, manifest, data, items } = loadSample();
+  const drafters = [
+    openaiDrafter({
+      key: loadApiKey(KEY_FILES.openai),
+      model: required("--openai"),
+      price: price("--openai-price"),
+    }),
+    anthropicDrafter({
+      key: loadApiKey(KEY_FILES.anthropic),
+      model: required("--anthropic"),
+      price: price("--anthropic-price"),
+    }),
+  ];
+  const limit = argValue("--limit");
+  const report = await runDrafts({
+    data,
+    items,
+    seed: manifest.seed,
+    drafters,
+    dir: path.join(sampleDir, "drafts"),
+    budgetUsd,
+    limit: limit == null ? undefined : positiveInt("--limit", 0),
+    concurrency: positiveInt("--concurrency", 4),
+    meta: { exportManifestSha256: manifest.exportManifestSha256 },
+    log: (line) => console.error(line),
+  });
+  console.log(JSON.stringify(report, null, 2));
+  if (report.abortedBy) throw new Error(`Stopped: ${report.abortedBy}`);
+}
+
 const COMMANDS: Record<string, () => Promise<void>> = {
   inventory,
   export: exportCommand,
   sample,
   baseline,
   label,
+  models,
+  draft,
   schema: async () => {
     process.stdout.write(`${JSON.stringify(annotationJsonSchema(), null, 2)}\n`);
   },
