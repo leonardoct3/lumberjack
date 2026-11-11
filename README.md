@@ -78,7 +78,7 @@ Production layout: managed Postgres + `web` (`next start`) + `connector` (1 repl
 | `npm run test:e2e` | Set up the E2E database and run Playwright workflows (requires Playwright browsers) |
 | `npm run verify` | Check formatting, linting, types, Vitest, and a production build |
 | `npm run bench -- <command>` | Benchmark tooling: `inventory`, `export`, `sample`, `baseline`, `label`, `schema` (see below) |
-| `npm run pipeline -- <command>` | Shadow interpretation: `status`, `enqueue --from --to`, `run` (see below) |
+| `npm run pipeline -- <command>` | Shadow interpretation and resolution: `status`, `enqueue --from --to`, `enqueue-resolve`, `run` (see below) |
 
 ## Shadow interpretation
 
@@ -89,13 +89,16 @@ A second reading of each message, written beside the board and read by nobody bu
 - **Failures.** Every call becomes an `InterpretationRun`, failed or not. Outages, timeouts and provider quota are retried with backoff (30 s doubling, at most 1 h); malformed output is tried twice; a refusal or an internal error goes straight to the dead letters (`status: dead`). Output is stored as `Observation` rows only after it passes the same evidence checks as human labels.
 - **Cost.** An identical earlier run (same message, input and context hashes, interpreter, prompt and schema versions) is reused instead of called again. Paid interpreters stop for the day at `PIPELINE_DAILY_BUDGET_USD` (default 0, so nothing is spent until a budget is set), and a pass makes at most `PIPELINE_MAX_CALLS_PER_PASS` calls.
 - **Interpreters.** `rules` is the current classifier, matcher and extractor, free, so the whole path runs without a provider. `openai` and `anthropic` run a language model (`src/pipeline/interpreters/model.ts`) with the key from `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. It reads the message, the same group's previous 24 hours and the same sender's previous 7 days (`src/pipeline/context.ts`) and the upcoming catalog, all as untrusted data, and says what the message does without choosing a catalog edition, which is the resolver's job. It quotes its evidence and the offsets are computed; an answer that fails the checks gets one corrective retry.
-- **Operating it.** `status` prints counts and timestamps only: capture freshness, backlog, expired leases, the oldest waiting job, dead letters by cause and today's spend. `enqueue` queues stored messages that were captured with the flag off (São Paulo days, `--to` exclusive); running it twice queues nothing new. `run` is one worker pass.
+- **Resolution.** With `PIPELINE_RESOLVE=shadow` too, an accepted interpretation that names anything queues a `resolve` job in the same transaction, and the worker resolves right after interpreting. Retrieval is code (`src/pipeline/resolution.ts`): every upcoming edition whose name or alias matches the mention (or, with no mention, the message text or the earlier message it answers), scored by the written date, at most 5. The resolver then decides per observation: `link` to a shortlisted edition, `new_event`, `abstain` or `not_mentioned`; a link outside the shortlist is refused. `rules` links only when one edition answers to the name and nothing written contradicts it; `model` asks the interpreter's model to choose, and only for observations with a shortlist. Each decision is a `ResolutionProposal` with its shortlist, scores and reason, under a run of stage `resolve` with the same retries, cache and budget. Nothing links a message or a signal from here.
+- **Operating it.** `status` prints counts and timestamps only: capture freshness, each stage's backlog, expired leases, the oldest waiting job, dead letters by cause, proposals by decision and today's spend. `enqueue` queues stored messages that were captured with the flag off (São Paulo days, `--to` exclusive); `enqueue-resolve` queues resolution for what was interpreted before it was on; running either twice queues nothing new. `run` is one worker pass.
 
 | Variable | Default | |
 |---|---|---|
 | `PIPELINE_INTERPRET` | `off` | `off` or `shadow` |
-| `PIPELINE_RESOLVE`, `PIPELINE_PROJECTION`, `PIPELINE_RECOMMENDATIONS` | `off` | Stages not built yet; any other value is refused |
+| `PIPELINE_RESOLVE` | `off` | `off` or `shadow`; needs `PIPELINE_INTERPRET=shadow` |
+| `PIPELINE_PROJECTION`, `PIPELINE_RECOMMENDATIONS` | `off` | Stages not built yet; any other value is refused |
 | `PIPELINE_INTERPRETER` | `rules` | `rules`, `openai` or `anthropic` |
+| `PIPELINE_RESOLVER` | `rules` | `rules`, or `model` to choose with the interpreter's model |
 | `PIPELINE_MODEL`, `PIPELINE_MODEL_PRICE` | | Model id and `IN/OUT[/CACHED]` US$ per million tokens; required for a model interpreter, and the price is what the daily budget counts |
 | `PIPELINE_MAX_CALLS_PER_PASS` | `50` | |
 | `PIPELINE_DAILY_BUDGET_USD` | `0` | Since São Paulo midnight, failed calls included |
@@ -133,6 +136,9 @@ Tooling for measuring the current rules against labelled real messages. It only 
 - **`interpret --export DIR --sample DIR --labels FILE[,FILE...] (--rules | --cursor SPEC | --openai MODEL --openai-price IN/OUT) [--budget-usd N] [--limit N]`** Runs one interpreter over every labelled item, with the request production would build (same context windows, catalog as of the message), and scores it. Label files are read in order and the first label for a message wins, so list human labels before silver.
   - **Scores.** Per-intent precision and recall, messages whose whole set of intents is right, and per field (mention, category, quantity, price, written date, relationship) how often a labelled value is recovered and how often one is made up where the label has none, with examples. Separately for all, random, challenge and held-out test.
   - **Output.** `<sample>/interpretations/<interpreter>.jsonl`, one record per message with status, observations, errors, tokens, cost and latency, and a `report-*.json` per run. Reruns resume and rescore everything answered so far; the budget counts what earlier runs in the file spent.
+- **`resolve --export DIR --sample DIR --labels FILE[,FILE...] --observations (labels | INTERPRETER_ID) (--rules | --cursor SPEC | --openai MODEL --openai-price IN/OUT) [--budget-usd N] [--limit N]`** Resolves every labelled item against the catalog as it stood at the message. `--observations labels` resolves the labelled observations, which measures resolution alone; an interpreter id such as `cursor-gpt-5-6-luna` resolves what that `interpret` run read, which measures the pipeline.
+  - **Scores.** Per message, so observations need no aligning: retrieval recall (labelled editions in the shortlist, and first in it), link precision and coverage with Wilson intervals, links to the wrong edition apart from links where the label says new event, abstentions on known editions, and new-event recall and precision. The current matcher is scored on the same messages beside it.
+  - **Output.** `<sample>/resolutions/<observations>--<resolver>.jsonl` and a `report-*.json` per run, with up to 10 wrong links by edition name. Reruns resume like `interpret`.
 - **`schema`** Prints the annotation JSON Schema, also kept at `docs/benchmark/annotation.schema.json`. Spans must quote the message exactly, missing years stay null, and only `source: "human"` labels are scored.
 
 ## UI

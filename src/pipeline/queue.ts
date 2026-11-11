@@ -51,6 +51,33 @@ export async function enqueueInterpretation(
   return { candidates: messages.length, queued: count };
 }
 
+/**
+ * Queues resolution for messages interpreted before it was switched on.
+ * Only accepted interpretations that name something; running it twice queues nothing new.
+ */
+export async function enqueueResolution(
+  db: PrismaClient,
+): Promise<{ candidates: number; queued: number }> {
+  const interpreted = await db.processingJob.findMany({
+    where: {
+      stage: "interpret",
+      status: "succeeded",
+      pipelineVersion: PIPELINE_VERSION,
+      resultRun: { observations: { some: { intent: { not: "unrelated" } } } },
+    },
+    select: { messageId: true, message: { select: { waMessageId: true } } },
+    orderBy: { id: "asc" },
+  });
+  const { count } = await db.processingJob.createMany({
+    data: interpreted.map((j) => ({
+      ...newJob("resolve", j.message.waMessageId),
+      messageId: j.messageId,
+    })),
+    skipDuplicates: true,
+  });
+  return { candidates: interpreted.length, queued: count };
+}
+
 export type ClaimedJob = {
   id: string;
   messageId: string;

@@ -47,8 +47,13 @@ describe("runWorkerOnce", () => {
   it("works the queue in shadow mode", async () => {
     await resetDb(prisma);
     await queuedMessage();
-    const report = await runWorkerOnce(prisma, now, () => loadPipelineConfig({ PIPELINE_INTERPRET: "shadow" }));
-    expect(report).toMatchObject({ calls: 1, succeeded: 1 });
+    const report = await runWorkerOnce(prisma, now, () =>
+      loadPipelineConfig({ PIPELINE_INTERPRET: "shadow", PIPELINE_RESOLVE: "shadow" }),
+    );
+    expect(report).toMatchObject({
+      interpret: { calls: 1, succeeded: 1 },
+      resolve: { calls: 1, succeeded: 1 },
+    });
   });
 
   it("refreshes the board before a bad flag can stop it", async () => {
@@ -57,7 +62,9 @@ describe("runWorkerOnce", () => {
       data: { name: "OLD", aliases: [], eventAt: new Date("2026-01-01T03:00:00Z") },
     });
     await expect(
-      runWorkerOnce(prisma, now, () => loadPipelineConfig({ PIPELINE_INTERPRET: "live" })),
+      runWorkerOnce(prisma, now, () =>
+        loadPipelineConfig({ PIPELINE_INTERPRET: "live" }),
+      ),
     ).rejects.toThrow(/PIPELINE_INTERPRET/);
     expect((await prisma.party.findFirstOrThrow()).status).toBe("past");
   });

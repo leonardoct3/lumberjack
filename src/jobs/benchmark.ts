@@ -50,6 +50,23 @@ import {
   modelInterpreter,
 } from "@/pipeline/interpreters/model";
 import { rulesInterpreter } from "@/pipeline/interpreters/rules";
+import {
+  modelResolver,
+  RESOLUTION_JSON_SCHEMA,
+  RESOLVER_GUIDE,
+  RESOLVER_MAX_OUTPUT_TOKENS,
+  renderResolution,
+} from "@/pipeline/resolvers/model";
+import { rulesResolver } from "@/pipeline/resolvers/rules";
+import {
+  latestProposals,
+  observationsFromInterpretation,
+  observationsFromLabel,
+  runResolutions,
+  scoreResolutions,
+  type Proposal,
+  type ResolutionRecord,
+} from "@/benchmark/resolve";
 import { buildInventory } from "@/benchmark/inventory";
 import type { LabelItem } from "@/benchmark/label/item";
 import { startLabelServer } from "@/benchmark/label/server";
@@ -89,6 +106,9 @@ const USAGE = `Usage: npm run bench -- <command> [options]
             [--cursor MODEL[,param=value...]@IN/OUT]... [--limit N] [--concurrency 4]
   silver    --export DIR --sample DIR --annotator ID --drafts A_ID,B_ID [--unreviewed]
   interpret --export DIR --sample DIR --labels FILE[,FILE...]
+            (--rules | --cursor MODEL[,param=value...]@IN/OUT | --openai MODEL --openai-price IN/OUT)
+            [--budget-usd N] [--limit N] [--concurrency 4]
+  resolve   --export DIR --sample DIR --labels FILE[,FILE...] --observations (labels | INTERPRETER_ID)
             (--rules | --cursor MODEL[,param=value...]@IN/OUT | --openai MODEL --openai-price IN/OUT)
             [--budget-usd N] [--limit N] [--concurrency 4]
   schema
@@ -791,9 +811,9 @@ function loadLabels(files: string[], data: ReturnType<typeof loadExport>) {
   return { labels, sources };
 }
 
-function interpreterChoice() {
-  if (process.argv.includes("--rules"))
-    return { id: "rules", interpreter: rulesInterpreter, client: null };
+/** --rules, or the model client named by --cursor or --openai. */
+function modelChoice() {
+  if (process.argv.includes("--rules")) return null;
   const spec = argValue("--cursor");
   const openaiModel = argValue("--openai");
   const client = spec
@@ -806,7 +826,20 @@ function interpreterChoice() {
         })
       : null;
   if (!client) throw new Error(`Pass one of --rules, --cursor, --openai.\n\n${USAGE}`);
+  return client;
+}
+
+function interpreterChoice() {
+  const client = modelChoice();
+  if (!client) return { id: "rules", interpreter: rulesInterpreter, client: null };
   return { id: client.id, interpreter: modelInterpreter(client), client };
+}
+
+function budgetFor(client: unknown): number {
+  const budgetUsd = client ? Number(required("--budget-usd")) : 0;
+  if (client && (!Number.isFinite(budgetUsd) || budgetUsd <= 0))
+    throw new Error("--budget-usd must be positive");
+  return budgetUsd;
 }
 
 /**
@@ -817,9 +850,7 @@ async function interpret(): Promise<void> {
   const { sampleDir, data, items } = loadSample();
   const { labels, sources } = loadLabels(required("--labels").split(","), data);
   const { id, interpreter, client } = interpreterChoice();
-  const budgetUsd = client ? Number(required("--budget-usd")) : 0;
-  if (client && (!Number.isFinite(budgetUsd) || budgetUsd <= 0))
-    throw new Error("--budget-usd must be positive");
+  const budgetUsd = budgetFor(client);
 
   const fixed =
     INTERPRETER_GUIDE.length + JSON.stringify(INTERPRETATION_JSON_SCHEMA).length;
@@ -885,6 +916,123 @@ async function interpret(): Promise<void> {
   if (run.abortedBy) throw new Error(`Stopped: ${run.abortedBy}`);
 }
 
+/**
+ * Resolves every labelled item, from the labelled observations (resolution
+ * alone) or from an interpreter's (the whole pipeline), and scores it beside
+ * the current matcher on the same messages.
+ */
+async function resolveCommand(): Promise<void> {
+  const { sampleDir, data, items } = loadSample();
+  const { labels, sources } = loadLabels(required("--labels").split(","), data);
+  const source = required("--observations");
+  const client = modelChoice();
+  const resolver = client ? modelResolver(client) : rulesResolver;
+  const budgetUsd = budgetFor(client);
+
+  const interpreted =
+    source === "labels"
+      ? null
+      : latestResults(
+          readJsonl<InterpretationRecord>(
+            assertOutsideRepo(
+              path.join(sampleDir, "interpretations", `${source}.jsonl`),
+            ),
+          ),
+        );
+  const fixed = RESOLVER_GUIDE.length + JSON.stringify(RESOLUTION_JSON_SCHEMA).length;
+  const reserveUsd = (request: Parameters<typeof renderResolution>[0]) => {
+    if (!client) return 0;
+    const asked = request.shortlists.flatMap((s, i) => (s.length > 0 ? [i] : []));
+    if (asked.length === 0) return 0;
+    const input =
+      Math.ceil((fixed + renderResolution(request, asked).length) / 3) +
+      (client.promptOverheadTokens ?? 0);
+    return (
+      (2 *
+        (input * client.price.inputPerMTok +
+          RESOLVER_MAX_OUTPUT_TOKENS * client.price.outputPerMTok)) /
+      1e6
+    );
+  };
+
+  const labelled = items.filter((i) => i.excluded == null && labels.has(i.messageId));
+  const id = `${source}--${client ? client.id : "rules"}`;
+  const dir = path.join(sampleDir, "resolutions");
+  const file = path.join(dir, `${id}.jsonl`);
+  const limit = argValue("--limit");
+  const run = await runResolutions({
+    data,
+    items: labelled,
+    resolver,
+    observationsFor: (item, view) => {
+      if (!interpreted) return observationsFromLabel(labels.get(item.messageId)!, view);
+      const observations = interpreted.get(item.messageId);
+      return observations ? observationsFromInterpretation(observations, view) : null;
+    },
+    file,
+    budgetUsd,
+    reserveUsd,
+    concurrency: positiveInt("--concurrency", 4),
+    limit: limit == null ? undefined : positiveInt("--limit", 0),
+    log: (line) => console.error(line),
+  });
+
+  const names = new Map(data.parties.map((p) => [p.id, p.name]));
+  const partyName = (pid: string) => names.get(pid) ?? pid;
+  const results = latestProposals(readJsonl<ResolutionRecord>(file));
+  const matcher = new Map<string, Proposal[]>(
+    runBaseline(
+      data.messages.filter((m) => labels.has(m.id)),
+      data.parties,
+    ).map((p) => [
+      p.messageId,
+      p.partyId
+        ? [
+            {
+              observation: 0,
+              intent: p.intents[0],
+              decision: "link",
+              partyId: p.partyId,
+              reason: null,
+              shortlist: [],
+            },
+          ]
+        : [],
+    ]),
+  );
+  const scored = (keep: (i: LabelItem) => boolean) => {
+    const chosen = labelled.filter((i) => keep(i) && results.has(i.messageId));
+    const gold = chosen.map((i) => labels.get(i.messageId)!);
+    return {
+      resolver: scoreResolutions(gold, results, partyName),
+      currentMatcher: scoreResolutions(gold, matcher, partyName, { retrieval: false }),
+    };
+  };
+  const report = {
+    createdAt: new Date().toISOString(),
+    repoRevision: repoRevision(),
+    run,
+    observations: source,
+    labels: { sources, usable: labelled.length, answered: results.size },
+    caveat:
+      "Labels are mostly two models agreeing, with contested messages left out, so scores lean towards easier messages. The catalog is the one known when each message was sent, with today's names and aliases.",
+    scores: {
+      all: scored(() => true),
+      random: scored((i) => i.set === "random"),
+      challenge: scored((i) => i.set === "challenge"),
+      heldOutTest: scored((i) => i.split === "test"),
+    },
+  };
+  const out = path.join(
+    dir,
+    `report-${id}-${report.createdAt.replace(/[:.]/g, "-")}.json`,
+  );
+  writeJson(out, report);
+  console.error(`wrote ${out}`);
+  console.log(JSON.stringify(run, null, 2));
+  if (run.abortedBy) throw new Error(`Stopped: ${run.abortedBy}`);
+}
+
 const COMMANDS: Record<string, () => Promise<void>> = {
   inventory,
   export: exportCommand,
@@ -895,6 +1043,7 @@ const COMMANDS: Record<string, () => Promise<void>> = {
   draft,
   silver,
   interpret,
+  resolve: resolveCommand,
   schema: async () => {
     process.stdout.write(`${JSON.stringify(annotationJsonSchema(), null, 2)}\n`);
   },

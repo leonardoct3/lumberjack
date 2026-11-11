@@ -4,19 +4,21 @@ import { prisma } from "@/db/client";
 import { startOfDaySp } from "@/domain/timezone";
 import { workerId } from "@/jobs/main";
 import { loadPipelineConfig } from "@/pipeline/config";
-import { interpreterFor } from "@/pipeline/interpreters";
-import { processInterpretation } from "@/pipeline/process";
-import { enqueueInterpretation } from "@/pipeline/queue";
+import { interpreterFor, resolverFor } from "@/pipeline/interpreters";
+import { processInterpretation, processResolution } from "@/pipeline/process";
+import { enqueueInterpretation, enqueueResolution } from "@/pipeline/queue";
 import { pipelineStatus } from "@/pipeline/status";
 
 const USAGE = `Usage: npm run pipeline -- <command> [options]
 
   status                                  queue, capture and spend, as counts only
   enqueue --from YYYY-MM-DD --to YYYY-MM-DD   queue stored messages capture never queued
-  run                                     one interpretation pass, as the worker does
+  enqueue-resolve                         queue resolution for messages interpreted before it was on
+  run                                     one interpretation pass and one resolution pass, as the worker does
 
 Dates are São Paulo calendar days; --to is exclusive. Flags come from PIPELINE_* in the
-environment, and "run" does nothing while PIPELINE_INTERPRET is off.`;
+environment; "run" does nothing while PIPELINE_INTERPRET is off, and resolves nothing while
+PIPELINE_RESOLVE is off.`;
 
 function spDay(name: string): Date {
   const at = process.argv.indexOf(name);
@@ -40,15 +42,23 @@ const COMMANDS: Record<string, () => Promise<void>> = {
     if (window.to <= window.from) throw new Error("--to must come after --from");
     print(await enqueueInterpretation(prisma, window));
   },
+  "enqueue-resolve": async () => {
+    print(await enqueueResolution(prisma));
+  },
   run: async () => {
     const config = loadPipelineConfig();
-    print(
-      await processInterpretation(prisma, {
-        config,
-        interpreter: interpreterFor(config),
-        owner: workerId(),
-      }),
-    );
+    const owner = workerId();
+    const interpret = await processInterpretation(prisma, {
+      config,
+      interpreter: interpreterFor(config),
+      owner,
+    });
+    const resolve = await processResolution(prisma, {
+      config,
+      resolver: resolverFor(config),
+      owner,
+    });
+    print({ interpret, resolve });
   },
 };
 

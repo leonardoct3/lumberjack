@@ -7,8 +7,12 @@ import { isListenDay } from "@/domain/timezone";
 import { markPastParties } from "@/jobs/mark-past";
 import { refreshHeat } from "@/jobs/refresh-heat";
 import { loadPipelineConfig, type PipelineConfig } from "@/pipeline/config";
-import { interpreterFor } from "@/pipeline/interpreters";
-import { processInterpretation, type PassReport } from "@/pipeline/process";
+import { interpreterFor, resolverFor } from "@/pipeline/interpreters";
+import {
+  processInterpretation,
+  processResolution,
+  type PassReport,
+} from "@/pipeline/process";
 
 export function workerId(): string {
   return `worker:${hostname()}:${process.pid}`;
@@ -22,21 +26,33 @@ export async function runWorkerOnce(
   db: PrismaClient,
   now: Date,
   loadPipeline: () => PipelineConfig = () => loadPipelineConfig({}),
-): Promise<PassReport | null> {
+): Promise<{ interpret: PassReport; resolve: PassReport } | null> {
   void isListenDay(now);
   await markPastParties(db, now);
   await refreshHeat(db, now);
 
   const config = loadPipeline();
   if (config.interpret === "off") return null;
-  return processInterpretation(db, { config, interpreter: interpreterFor(config), owner: workerId() });
+  const owner = workerId();
+  const interpret = await processInterpretation(db, {
+    config,
+    interpreter: interpreterFor(config),
+    owner,
+  });
+  // Right after, so messages interpreted in this pass are resolved in it too.
+  const resolve = await processResolution(db, {
+    config,
+    resolver: resolverFor(config),
+    owner,
+  });
+  return { interpret, resolve };
 }
 
 async function main(): Promise<void> {
   await prisma.$connect();
   try {
     const report = await runWorkerOnce(prisma, new Date(), () => loadPipelineConfig());
-    if (report) console.log("interpretation pass", JSON.stringify(report));
+    if (report) console.log("pipeline pass", JSON.stringify(report));
   } finally {
     await prisma.$disconnect();
   }
