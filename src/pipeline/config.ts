@@ -22,10 +22,12 @@ const price = z
 const schema = z
   .object({
     PIPELINE_INTERPRET: z.enum(["off", "shadow"]).default("off"),
-    PIPELINE_RESOLVE: z.literal("off").default("off"),
+    PIPELINE_RESOLVE: z.enum(["off", "shadow"]).default("off"),
     PIPELINE_PROJECTION: z.literal("off").default("off"),
     PIPELINE_RECOMMENDATIONS: z.literal("off").default("off"),
     PIPELINE_INTERPRETER: z.enum(["rules", "openai", "anthropic"]).default("rules"),
+    /** "model" chooses among the shortlist with the interpreter's model. */
+    PIPELINE_RESOLVER: z.enum(["rules", "model"]).default("rules"),
     /** Model id and price for a model interpreter; the price is what the budget counts. */
     PIPELINE_MODEL: z.string().min(1).optional(),
     PIPELINE_MODEL_PRICE: price.optional(),
@@ -36,6 +38,19 @@ const schema = z
     PIPELINE_CALL_TIMEOUT_MS: z.coerce.number().int().min(100).default(60_000),
   })
   .superRefine((value, ctx) => {
+    if (value.PIPELINE_RESOLVE === "shadow" && value.PIPELINE_INTERPRET === "off")
+      ctx.addIssue({
+        code: "custom",
+        path: ["PIPELINE_RESOLVE"],
+        message: "resolves observations, so it needs PIPELINE_INTERPRET=shadow",
+      });
+    if (value.PIPELINE_RESOLVER === "model" && value.PIPELINE_INTERPRETER === "rules")
+      ctx.addIssue({
+        code: "custom",
+        path: ["PIPELINE_RESOLVER"],
+        message:
+          "model uses the interpreter's model, so PIPELINE_INTERPRETER must be openai or anthropic",
+      });
     if (value.PIPELINE_INTERPRETER === "rules") return;
     for (const key of ["PIPELINE_MODEL", "PIPELINE_MODEL_PRICE"] as const) {
       if (value[key] == null) {
@@ -56,10 +71,11 @@ export type ModelSettings = {
 
 export type PipelineConfig = {
   interpret: "off" | "shadow";
-  resolve: "off";
+  resolve: "off" | "shadow";
   projection: "off";
   recommendations: "off";
   interpreter: "rules" | "openai" | "anthropic";
+  resolver: "rules" | "model";
   model: ModelSettings | null;
   maxCallsPerPass: number;
   dailyBudgetUsd: number;
@@ -85,6 +101,7 @@ export function loadPipelineConfig(
     projection: value.PIPELINE_PROJECTION,
     recommendations: value.PIPELINE_RECOMMENDATIONS,
     interpreter,
+    resolver: value.PIPELINE_RESOLVER,
     model:
       interpreter === "rules"
         ? null

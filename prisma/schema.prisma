@@ -92,6 +92,7 @@ model Message {
   processingJobs     ProcessingJob[]
   interpretationRuns InterpretationRun[]
   observations       Observation[]
+  resolutions        ResolutionProposal[]
 
   /** Operator sent this orphan away without linking it; keeps the Inbox drainable. */
   dismissedAt  DateTime?
@@ -203,6 +204,7 @@ enum WaState {
 
 enum ProcessingStage {
   interpret
+  resolve
 }
 
 enum JobStatus {
@@ -270,7 +272,7 @@ model ProcessingJob {
 }
 
 /**
- * One call to an interpreter, kept whether it succeeded or not. A new model or
+ * One call to an interpreter or a resolver (see `stage`), kept whether it succeeded or not. A new model or
  * prompt version writes a new run; earlier runs are never rewritten.
  */
 model InterpretationRun {
@@ -300,6 +302,7 @@ model InterpretationRun {
   /** The validated output, as returned, for diagnosis and replay. */
   result             Json?
   observations       Observation[]
+  resolutions        ResolutionProposal[]
   createdAt          DateTime        @default(now())
 
   @@index([messageId, stage])
@@ -331,10 +334,43 @@ model Observation {
   relationshipKind String?
   relatedMessageId String?
   ambiguities      String[]
+  resolutions      ResolutionProposal[]
   createdAt        DateTime          @default(now())
 
   @@unique([runId, position])
   @@index([messageId])
+}
+
+enum ResolutionDecision {
+  link
+  new_event
+  abstain
+  not_mentioned
+}
+
+/**
+ * Which catalog edition an observation is about, as a resolve run proposed it.
+ * Shadow output: nothing links a message or a signal from here.
+ */
+model ResolutionProposal {
+  id            String             @id @default(cuid())
+  run           InterpretationRun  @relation(fields: [runId], references: [id])
+  runId         String
+  observation   Observation        @relation(fields: [observationId], references: [id])
+  observationId String
+  message       Message            @relation(fields: [messageId], references: [id])
+  messageId     String
+  decision      ResolutionDecision
+  /** No foreign key: merging or discarding a party must never be blocked by a proposal. */
+  partyId       String?
+  /** The shortlist retrieval offered, `[{ partyId, score, reasons }]`, best first. */
+  candidates    Json
+  reason        String?
+  createdAt     DateTime           @default(now())
+
+  @@unique([runId, observationId])
+  @@index([messageId])
+  @@index([partyId])
 }
 
 /** Singleton row (`id = "wa"`) shared by the web board and the connector process. */

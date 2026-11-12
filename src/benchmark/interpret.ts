@@ -1,20 +1,15 @@
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
-import path from "node:path";
 import type { SenderRole } from "@prisma/client";
-import {
-  InterpreterError,
-  type Interpreter,
-  type InterpretationRequest,
-} from "@/pipeline/interpreter";
+import type { Interpreter, InterpretationRequest } from "@/pipeline/interpreter";
 import {
   validateInterpretation,
   type InterpretedObservation,
 } from "@/pipeline/observation";
 import type { Annotation } from "./annotation";
 import { scoreIntents, wilsonInterval } from "./baseline";
-import { readJsonl, type LoadedExport } from "./dataset";
+import type { LoadedExport } from "./dataset";
 import { writtenDate } from "./draft/compare";
 import { buildItemView, type ItemView, type LabelItem } from "./label/item";
+import { runCalls, type CallRecord, type RunReport } from "./runner";
 
 /** What production would have sent for this message, rebuilt from the export. */
 export function requestFromView(view: ItemView): InterpretationRequest {
@@ -39,49 +34,20 @@ export function requestFromView(view: ItemView): InterpretationRequest {
   };
 }
 
-export type InterpretationRecord = {
-  messageId: string;
-  status: "ok" | "invalid" | "failed";
+export type InterpretationRecord = CallRecord & {
   observations: InterpretedObservation[] | null;
-  errors: string[];
-  failureKind: string | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  costUsd: number;
-  latencyMs: number;
-  at: string;
 };
 
-export type InterpretationRunReport = {
+export type InterpretationRunReport = RunReport & {
   interpreter: Pick<
     Interpreter,
     "name" | "version" | "provider" | "model" | "promptVersion"
   >;
-  file: string;
-  budgetUsd: number;
-  priorSpentUsd: number;
-  spentUsd: number;
-  stoppedForBudget: boolean;
-  abortedBy: string | null;
-  alreadyDone: number;
-  attempted: number;
-  byStatus: Record<string, number>;
-  failures: Record<string, number>;
-  latencyMs: { p50: number | null; p95: number | null };
 };
-
-const percentile = (values: number[], p: number) => {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-};
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Runs an interpreter over the given items, appending one record per message
- * to `file` and skipping messages it already answered. Each paid call first
- * reserves `reserveUsd` of the budget, so the budget is never overshot.
+ * to `file` and skipping messages it already answered.
  */
 export async function runInterpretations(options: {
   data: LoadedExport;
@@ -96,123 +62,28 @@ export async function runInterpretations(options: {
   retries?: number;
   log?: (line: string) => void;
 }): Promise<InterpretationRunReport> {
-  const { interpreter, file } = options;
-  const timeoutMs = options.timeoutMs ?? 180_000;
-  const retries = options.retries ?? 2;
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const previous = existsSync(file) ? readJsonl<InterpretationRecord>(file) : [];
-  const done = new Set(
-    previous.filter((r) => r.status !== "failed").map((r) => r.messageId),
-  );
-  const priorSpentUsd = previous.reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
-
-  const todo = options.items
-    .filter((i) => i.excluded == null && !done.has(i.messageId))
-    .slice(0, options.limit ?? Infinity);
-  let spent = priorSpentUsd;
-  let reserved = 0;
-  let stoppedForBudget = false;
-  let abortedBy: string | null = null;
-  const latencies: number[] = [];
-  const byStatus: Record<string, number> = {};
-  const failures: Record<string, number> = {};
-
-  const write = (record: InterpretationRecord) => {
-    appendFileSync(file, `${JSON.stringify(record)}\n`, { mode: 0o600 });
-    byStatus[record.status] = (byStatus[record.status] ?? 0) + 1;
-    if (record.failureKind)
-      failures[record.failureKind] = (failures[record.failureKind] ?? 0) + 1;
-  };
-
-  const once = async (request: InterpretationRequest) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await interpreter.interpret(request, controller.signal);
-    } catch (error) {
-      if (controller.signal.aborted) throw new InterpreterError("timeout", "timed out");
-      throw error;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  const one = async (item: LabelItem) => {
-    const request = requestFromView(buildItemView(options.data, item));
-    const reservation = interpreter.paid ? options.reserveUsd(request) : 0;
-    if (spent + reserved + reservation > options.budgetUsd) {
-      stoppedForBudget = true;
-      return;
-    }
-    reserved += reservation;
-    const started = performance.now();
-    let cost = 0;
-    try {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const result = await once(request);
-          cost += result.usage?.costUsd ?? 0;
-          const checked = validateInterpretation(result.output, request);
-          write({
-            messageId: item.messageId,
-            status: checked.observations ? "ok" : "invalid",
-            observations: checked.observations,
+  const { interpreter } = options;
+  const run = await runCalls({
+    ...options,
+    name: interpreter.name,
+    paid: interpreter.paid,
+    emptyPayload: { observations: null },
+    prepare(item) {
+      const request = requestFromView(buildItemView(options.data, item));
+      return {
+        reserveUsd: options.reserveUsd(request),
+        invoke: (signal) => interpreter.interpret(request, signal),
+        check(output) {
+          const checked = validateInterpretation(output, request);
+          return {
+            ok: checked.observations != null,
+            payload: { observations: checked.observations },
             errors: checked.errors,
-            failureKind: checked.observations ? null : "schema",
-            inputTokens: result.usage?.inputTokens ?? null,
-            outputTokens: result.usage?.outputTokens ?? null,
-            costUsd: cost,
-            latencyMs: Math.round(performance.now() - started),
-            at: new Date().toISOString(),
-          });
-          break;
-        } catch (error) {
-          const kind = error instanceof InterpreterError ? error.kind : "internal";
-          if (error instanceof InterpreterError) cost += error.usage?.costUsd ?? 0;
-          const message = error instanceof Error ? error.message : String(error);
-          const retry =
-            (kind === "transient" || kind === "timeout") && attempt < retries;
-          if (retry) {
-            await sleep(2_000 * 2 ** attempt);
-            continue;
-          }
-          write({
-            messageId: item.messageId,
-            status: "failed",
-            observations: null,
-            errors: [message.slice(0, 300)],
-            failureKind: kind,
-            inputTokens: null,
-            outputTokens: null,
-            costUsd: cost,
-            latencyMs: Math.round(performance.now() - started),
-            at: new Date().toISOString(),
-          });
-          if (kind === "internal") abortedBy = message.slice(0, 300);
-          break;
-        }
-      }
-    } finally {
-      reserved -= reservation;
-      spent += cost;
-      latencies.push(Math.round(performance.now() - started));
-    }
-    const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
-    if (total % 10 === 0) {
-      options.log?.(
-        `${interpreter.name}: ${total}/${todo.length}, US$ ${spent.toFixed(2)}`,
-      );
-    }
-  };
-
-  const queue = [...todo];
-  await Promise.all(
-    Array.from({ length: Math.max(1, options.concurrency ?? 4) }, async () => {
-      while (queue.length > 0 && !abortedBy && !stoppedForBudget)
-        await one(queue.shift()!);
-    }),
-  );
-
+          };
+        },
+      };
+    },
+  });
   return {
     interpreter: {
       name: interpreter.name,
@@ -221,17 +92,7 @@ export async function runInterpretations(options: {
       model: interpreter.model,
       promptVersion: interpreter.promptVersion,
     },
-    file: path.basename(file),
-    budgetUsd: options.budgetUsd,
-    priorSpentUsd,
-    spentUsd: spent,
-    stoppedForBudget,
-    abortedBy,
-    alreadyDone: done.size,
-    attempted: todo.length,
-    byStatus,
-    failures,
-    latencyMs: { p50: percentile(latencies, 0.5), p95: percentile(latencies, 0.95) },
+    ...run,
   };
 }
 

@@ -7,6 +7,15 @@ import { resetDb } from "../helpers/db";
 const now = new Date("2026-09-16T15:00:00Z");
 const ago = (ms: number) => new Date(now.getTime() - ms);
 const MINUTE = 60_000;
+const IDLE = {
+  pending: 0,
+  running: 0,
+  succeeded: 0,
+  dead: 0,
+  due: 0,
+  expiredLeases: 0,
+  oldestWaitingSince: null,
+};
 
 async function capture(i: number) {
   await ingestRawMessage(
@@ -38,16 +47,9 @@ describe("pipelineStatus", () => {
   it("reports an empty pipeline without inventing a backlog", async () => {
     expect(await pipelineStatus(prisma, now)).toEqual({
       capture: { lastStoredAt: null, sessionState: null, heartbeatAt: null },
-      jobs: {
-        pending: 0,
-        running: 0,
-        succeeded: 0,
-        dead: 0,
-        due: 0,
-        expiredLeases: 0,
-        oldestWaitingSince: null,
-      },
-      deadByKind: {},
+      jobs: { interpret: IDLE, resolve: IDLE },
+      deadByKind: { interpret: {}, resolve: {} },
+      proposals: { link: 0, new_event: 0, abstain: 0, not_mentioned: 0 },
       today: { succeeded: 0, failed: 0, costUsd: 0 },
     });
   });
@@ -102,7 +104,8 @@ describe("pipelineStatus", () => {
     const status = await pipelineStatus(prisma, now);
     expect(status.capture.sessionState).toBe("connected");
     expect(status.capture.lastStoredAt).not.toBeNull();
-    expect(status.jobs).toEqual({
+    expect(status.jobs.resolve).toEqual(IDLE);
+    expect(status.jobs.interpret).toEqual({
       pending: 2,
       running: 1,
       succeeded: 0,
@@ -111,7 +114,7 @@ describe("pipelineStatus", () => {
       expiredLeases: 1,
       oldestWaitingSince: ago(45 * MINUTE),
     });
-    expect(status.deadByKind).toEqual({ refusal: 1 });
+    expect(status.deadByKind).toEqual({ interpret: { refusal: 1 }, resolve: {} });
     expect(status.today).toEqual({ succeeded: 0, failed: 1, costUsd: 0.02 });
   });
 });
