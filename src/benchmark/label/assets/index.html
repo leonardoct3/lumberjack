@@ -206,6 +206,43 @@
       #status {
         color: var(--good);
       }
+      .drafts {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 8px;
+      }
+      .draft {
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        min-width: 0;
+      }
+      .draft .grow {
+        flex: 1;
+      }
+      .dobs {
+        border-top: 1px solid var(--line);
+        padding-top: 6px;
+        margin-top: 6px;
+      }
+      .dobs dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 1px 10px;
+        margin: 4px 0;
+        font-size: 12px;
+      }
+      .dobs dt {
+        color: var(--muted);
+      }
+      .dobs dd {
+        margin: 0;
+        word-break: break-word;
+      }
+      .dobs .diff {
+        color: #ffb454;
+        font-weight: 600;
+      }
     </style>
   </head>
   <body>
@@ -238,6 +275,7 @@
       </section>
       <section>
         <div id="errors" role="alert"></div>
+        <div id="drafts"></div>
         <div id="observations"></div>
         <div class="row">
           <button id="add-observation" type="button">+ Add observation</button>
