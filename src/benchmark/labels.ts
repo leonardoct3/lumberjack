@@ -25,7 +25,12 @@ export function latestAnnotations<T extends { messageId?: unknown }>(
  */
 export function buildLabel(
   body: unknown,
-  at: { messageId: string; annotator: string; now: Date },
+  at: {
+    messageId: string;
+    annotator: string;
+    now: Date;
+    source?: Annotation["source"];
+  },
   context: { text: string; availableContext: string[] },
 ): { annotation: Annotation | null; errors: string[] } {
   const sent = (body !== null && typeof body === "object" ? body : {}) as Record<
@@ -37,7 +42,7 @@ export function buildLabel(
     messageId: at.messageId,
     annotator: at.annotator,
     annotatedAt: at.now.toISOString(),
-    source: "human",
+    source: at.source ?? "human",
     observations: sent.observations,
     needsReview: sent.needsReview,
     contextUsed: sent.contextUsed,

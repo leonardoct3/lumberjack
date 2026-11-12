@@ -35,6 +35,22 @@ export function assertOutsideRepo(
   return resolved;
 }
 
+/** Provider keys follow the pseudonym key: a file outside the repository, named by an env var. */
+export function loadApiKey(
+  envName: "OPENAI_API_KEY_FILE" | "ANTHROPIC_API_KEY_FILE" | "CURSOR_API_KEY_FILE",
+  env: Record<string, string | undefined> = process.env,
+  repoRoot: string = REPO_ROOT,
+): string {
+  const file = env[envName];
+  if (!file)
+    throw new Error(
+      `Set ${envName} to a file outside the repository holding the API key.`,
+    );
+  const key = readFileSync(assertOutsideRepo(file, repoRoot), "utf8").trim();
+  if (key.length === 0) throw new Error(`${envName} points at an empty file.`);
+  return key;
+}
+
 export function loadPseudonymKey(
   env: Record<string, string | undefined> = process.env,
   repoRoot: string = REPO_ROOT,

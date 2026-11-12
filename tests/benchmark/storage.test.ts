@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertOutsideRepo, loadPseudonymKey } from "@/benchmark/storage";
+import { assertOutsideRepo, loadApiKey, loadPseudonymKey } from "@/benchmark/storage";
 
 const repo = path.resolve(__dirname, "../..");
 
@@ -24,6 +24,35 @@ describe("assertOutsideRepo", () => {
     expect(() =>
       assertOutsideRepo(`${repo}/../${path.basename(repo)}/x`, repo),
     ).toThrow();
+  });
+});
+
+describe("loadApiKey", () => {
+  it("reads a provider key from a file outside the repository", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "lj-key-"));
+    const file = path.join(dir, "openai.key");
+    writeFileSync(file, "sk-abc\n");
+    expect(loadApiKey("OPENAI_API_KEY_FILE", { OPENAI_API_KEY_FILE: file }, repo)).toBe(
+      "sk-abc",
+    );
+  });
+
+  it("refuses a key inside the repository, an empty file, or none at all", () => {
+    expect(() =>
+      loadApiKey(
+        "ANTHROPIC_API_KEY_FILE",
+        { ANTHROPIC_API_KEY_FILE: path.join(repo, "a.key") },
+        repo,
+      ),
+    ).toThrow(/outside the repository/);
+    const empty = path.join(mkdtempSync(path.join(tmpdir(), "lj-key-")), "empty.key");
+    writeFileSync(empty, "\n");
+    expect(() =>
+      loadApiKey("OPENAI_API_KEY_FILE", { OPENAI_API_KEY_FILE: empty }, repo),
+    ).toThrow(/empty/);
+    expect(() => loadApiKey("OPENAI_API_KEY_FILE", {}, repo)).toThrow(
+      /OPENAI_API_KEY_FILE/,
+    );
   });
 });
 

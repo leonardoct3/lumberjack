@@ -115,6 +115,13 @@ Tooling for measuring the current rules against labelled real messages. It only 
   - **Spans.** Select text in the message to add a span; the offsets are computed for you.
   - **Saving.** Every save is checked with the same validator the benchmark scores, then appended to `<sample>/labels/<annotator>.jsonl` (mode 600). The latest line per message wins, and `baseline --gold` reads it that way.
   - **Annotator.** `ID` is a pseudonym, never a real name.
+- **`models`** Lists the model ids each provider key can reach, so the drafting models are picked by a person before anything is spent.
+- **`draft --export DIR --sample DIR --budget-usd N [--openai MODEL --openai-price IN/OUT] [--anthropic MODEL --anthropic-price IN/OUT] [--limit N]`** Two providers draft every usable item independently, so a person only has to review where they disagree plus an audit sample. They can run separately, one now and the other later. Neither model may later be the interpreter under evaluation.
+  - **Keys.** `OPENAI_API_KEY_FILE`, `ANTHROPIC_API_KEY_FILE` and `CURSOR_API_KEY_FILE` name files outside the repository; the keys are never printed. Prices are US$ per million tokens from each provider's price page.
+  - **Through Cursor.** `--cursor MODEL[,param=value...]@IN/OUT`, repeatable, reaches OpenAI and Anthropic models with one Cursor key (`@cursor/sdk`). Each call is a throwaway local agent with no tools, no ambient settings, the guide as its system prompt, an empty working directory and a conversation store deleted afterwards. There is no schema-constrained decoding on this route, so the validator and its one retry do that work.
+  - **Input.** Exactly what the labelling page shows, wrapped as untrusted data; the guide is in `src/benchmark/draft/guide.ts`. Models quote evidence and the offsets are computed, then every draft goes through the same validator as a human label, with one retry that hands the errors back.
+  - **Budget.** Each call reserves its worst case (estimated input plus the output cap) before it starts, and earlier runs in the same directory count against the same budget. Use `--limit 5` for a smoke run.
+  - **Output.** `<sample>/drafts/<drafter>.jsonl` (`source: "model_draft"`, never scored as gold), failures by kind next to it, and a `run-*.json` manifest with models, prices, guide and schema versions, tokens, cost, latency and data retention (`provider default, unverified`; OpenAI calls set `store: false`). Reruns skip what is already drafted.
 - **`schema`** Prints the annotation JSON Schema, also kept at `docs/benchmark/annotation.schema.json`. Spans must quote the message exactly, missing years stay null, and only `source: "human"` labels are scored.
 
 ## UI
