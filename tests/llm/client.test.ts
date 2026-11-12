@@ -6,6 +6,8 @@ import {
   ModelError,
   listModels,
   openaiClient,
+  openrouterClient,
+  openrouterMaker,
 } from "@/llm/client";
 
 const KEY = "sk-test-secret-key";
@@ -149,6 +151,95 @@ describe("openaiClient", () => {
     expect(fatal.kind).toBe("fatal");
     expect(fatal.message).toBe("HTTP 401: Incorrect API key provided");
     expect(fatal.message).not.toContain(KEY);
+  });
+});
+
+const chatOk = (content: string | null, over: Record<string, unknown> = {}) => ({
+  choices: [{ finish_reason: "stop", message: { content } }],
+  usage: {
+    prompt_tokens: 1200,
+    completion_tokens: 300,
+    prompt_tokens_details: { cached_tokens: 200 },
+  },
+  ...over,
+});
+
+describe("openrouterClient", () => {
+  it("asks for strict JSON from providers that honour it and keep no prompts", async () => {
+    const { fn, seen } = fakeFetch(200, chatOk('{"ok":true}'));
+    const client = openrouterClient({
+      key: KEY,
+      model: "openai/gpt-5.6-luna",
+      price,
+      fetch: fn,
+    });
+    expect(await client.complete({ ...call, schemaName: "interpretation" })).toEqual({
+      output: { ok: true },
+      usage: { inputTokens: 1000, outputTokens: 300, cachedInputTokens: 200 },
+    });
+    expect(seen[0].url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect((seen[0].init.headers as Record<string, string>).authorization).toBe(
+      `Bearer ${KEY}`,
+    );
+    expect(JSON.parse(seen[0].init.body as string)).toEqual({
+      model: "openai/gpt-5.6-luna",
+      messages: [
+        { role: "system", content: "guide" },
+        { role: "user", content: "item" },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "interpretation",
+          strict: true,
+          schema: { type: "object" },
+        },
+      },
+      max_tokens: 500,
+      provider: { require_parameters: true, data_collection: "deny" },
+    });
+    expect(client).toMatchObject({
+      id: "openrouter-openai-gpt-5-6-luna",
+      provider: "openai",
+      route: "openrouter",
+    });
+  });
+
+  it("names the maker from the model id", () => {
+    expect(openrouterMaker("deepseek/deepseek-v4-flash")).toBe("deepseek");
+    expect(openrouterMaker("x-ai/grok-4.6-fast")).toBe("xai");
+    expect(openrouterMaker("qwen/qwen3.8-flash")).toBe("other");
+  });
+
+  it("tells refusals, cut-offs, provider failures and empty credit apart", async () => {
+    const kind = async (status: number, body: unknown) =>
+      (
+        await failureOf(
+          openrouterClient({
+            key: KEY,
+            model: "m",
+            price,
+            fetch: fakeFetch(status, body).fn,
+          }).complete(call),
+        )
+      ).kind;
+    expect(
+      await kind(200, chatOk(null, { choices: [{ message: { refusal: "no" } }] })),
+    ).toBe("refusal");
+    expect(
+      await kind(
+        200,
+        chatOk("{", { choices: [{ finish_reason: "length", message: {} }] }),
+      ),
+    ).toBe("incomplete");
+    expect(await kind(200, chatOk("{not json"))).toBe("invalid_json");
+    expect(await kind(200, chatOk(null, { error: { message: "upstream died" } }))).toBe(
+      "transient",
+    );
+    expect(await kind(429, { error: { message: "rate limited" } })).toBe("transient");
+    expect(await kind(402, { error: { message: "Insufficient credits" } })).toBe(
+      "fatal",
+    );
   });
 });
 

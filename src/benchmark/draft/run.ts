@@ -27,6 +27,7 @@ import { DRAFT_JSON_SCHEMA, draftToLabelBody } from "./schema";
 
 export const RETENTION: Record<ModelClient["route"], string> = {
   api: "provider default, unverified",
+  openrouter: "OpenRouter with data_collection deny, then provider default, unverified",
   cursor: "Cursor Privacy Mode and provider default, unverified",
 };
 

@@ -25,7 +25,9 @@ const schema = z
     PIPELINE_RESOLVE: z.enum(["off", "shadow"]).default("off"),
     PIPELINE_PROJECTION: z.literal("off").default("off"),
     PIPELINE_RECOMMENDATIONS: z.literal("off").default("off"),
-    PIPELINE_INTERPRETER: z.enum(["rules", "openai", "anthropic"]).default("rules"),
+    PIPELINE_INTERPRETER: z
+      .enum(["rules", "openai", "anthropic", "openrouter"])
+      .default("rules"),
     /** "model" chooses among the shortlist with the interpreter's model. */
     PIPELINE_RESOLVER: z.enum(["rules", "model"]).default("rules"),
     /** Model id and price for a model interpreter; the price is what the budget counts. */
@@ -49,7 +51,7 @@ const schema = z
         code: "custom",
         path: ["PIPELINE_RESOLVER"],
         message:
-          "model uses the interpreter's model, so PIPELINE_INTERPRETER must be openai or anthropic",
+          "model uses the interpreter's model, so PIPELINE_INTERPRETER cannot be rules",
       });
     if (value.PIPELINE_INTERPRETER === "rules") return;
     for (const key of ["PIPELINE_MODEL", "PIPELINE_MODEL_PRICE"] as const) {
@@ -64,7 +66,7 @@ const schema = z
   });
 
 export type ModelSettings = {
-  provider: "openai" | "anthropic";
+  provider: "openai" | "anthropic" | "openrouter";
   model: string;
   price: { inputPerMTok: number; outputPerMTok: number; cachedInputPerMTok?: number };
 };
@@ -74,7 +76,7 @@ export type PipelineConfig = {
   resolve: "off" | "shadow";
   projection: "off";
   recommendations: "off";
-  interpreter: "rules" | "openai" | "anthropic";
+  interpreter: "rules" | "openai" | "anthropic" | "openrouter";
   resolver: "rules" | "model";
   model: ModelSettings | null;
   maxCallsPerPass: number;

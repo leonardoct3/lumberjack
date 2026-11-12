@@ -1,7 +1,8 @@
-/** Providers whose API this module calls directly. */
-export type Provider = "openai" | "anthropic";
+/** APIs this module calls directly; OpenRouter resells other makers' models. */
+export type Provider = "openai" | "anthropic" | "openrouter";
 /** Whose model answers, whichever route the call takes. */
-export type Maker = Provider | "google" | "xai" | "cursor";
+export type Maker =
+  "openai" | "anthropic" | "google" | "xai" | "cursor" | "deepseek" | "other";
 
 export type Price = {
   inputPerMTok: number;
@@ -52,8 +53,8 @@ export type ModelClient = {
   id: string;
   /** Whose model answers, which is what makes two answers independent. */
   provider: Maker;
-  /** How the call gets there: the provider's own API, or Cursor's agent runtime. */
-  route: "api" | "cursor";
+  /** How the call gets there: the maker's own API, OpenRouter, or Cursor's agent runtime. */
+  route: "api" | "openrouter" | "cursor";
   model: string;
   params?: { id: string; value: string }[];
   price: Price;
@@ -75,10 +76,14 @@ const ENDPOINTS = {
     complete: "https://api.anthropic.com/v1/messages",
     models: "https://api.anthropic.com/v1/models?limit=1000",
   },
+  openrouter: {
+    complete: "https://openrouter.ai/api/v1/chat/completions",
+    models: "https://openrouter.ai/api/v1/models",
+  },
 };
 
 function headers(provider: Provider, key: string): Record<string, string> {
-  return provider === "openai"
+  return provider !== "anthropic"
     ? { authorization: `Bearer ${key}`, "content-type": "application/json" }
     : {
         "x-api-key": key,
@@ -272,6 +277,95 @@ export function anthropicClient(options: {
       if (body.stop_reason === "max_tokens")
         throw new ModelError("incomplete", "incomplete: max_tokens", usage);
       const text = (body.content ?? []).find((c) => c.type === "text")?.text;
+      if (text == null) throw new ModelError("invalid_json", "no output text", usage);
+      return { output: parseJson(text, usage), usage };
+    },
+  };
+}
+
+type ChatResponse = {
+  error?: { message?: string };
+  choices?: {
+    finish_reason?: string | null;
+    message?: { content?: string | null; refusal?: string | null };
+  }[];
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
+};
+
+const MAKERS: Record<string, Maker> = {
+  openai: "openai",
+  anthropic: "anthropic",
+  google: "google",
+  "x-ai": "xai",
+  deepseek: "deepseek",
+};
+
+/** OpenRouter model ids are `maker/model`. */
+export function openrouterMaker(model: string): Maker {
+  return MAKERS[model.split("/")[0]] ?? "other";
+}
+
+export function openrouterClient(options: {
+  key: string;
+  model: string;
+  price: Price;
+  fetch?: Fetch;
+}): ModelClient {
+  const fetchFn = options.fetch ?? fetch;
+  return {
+    id: clientId("openrouter", options.model),
+    provider: openrouterMaker(options.model),
+    route: "openrouter",
+    model: options.model,
+    price: options.price,
+    async complete(call) {
+      const body = (await post(
+        fetchFn,
+        "openrouter",
+        options.key,
+        {
+          model: options.model,
+          messages: [
+            { role: "system", content: call.system },
+            { role: "user", content: call.user },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: call.schemaName ?? "answer",
+              strict: true,
+              schema: call.schema,
+            },
+          },
+          max_tokens: call.maxOutputTokens,
+          // Only providers that honour the schema, and none that keep prompts for training.
+          provider: { require_parameters: true, data_collection: "deny" },
+        },
+        call.signal,
+      )) as ChatResponse;
+      const cached = body.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+      const usage = {
+        inputTokens: (body.usage?.prompt_tokens ?? 0) - cached,
+        outputTokens: body.usage?.completion_tokens ?? 0,
+        cachedInputTokens: cached,
+      };
+      // A provider failing after the request was accepted still answers 200.
+      if (body.error)
+        throw new ModelError(
+          "transient",
+          `provider error: ${String(body.error.message ?? "unknown").slice(0, 300)}`,
+          usage,
+        );
+      const choice = body.choices?.[0];
+      if (choice?.message?.refusal || choice?.finish_reason === "content_filter")
+        throw new ModelError("refusal", "the model refused", usage);
+      if (choice?.finish_reason === "length")
+        throw new ModelError("incomplete", "incomplete: max_tokens", usage);
+      const text = choice?.message?.content;
       if (text == null) throw new ModelError("invalid_json", "no output text", usage);
       return { output: parseJson(text, usage), usage };
     },

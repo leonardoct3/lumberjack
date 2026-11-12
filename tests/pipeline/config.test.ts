@@ -90,6 +90,22 @@ describe("loadPipelineConfig", () => {
     expect(interpreterFor(loadPipelineConfig({}), {}).name).toBe("rules");
   });
 
+  it("reaches models through OpenRouter with its own key", () => {
+    const config = loadPipelineConfig({
+      PIPELINE_INTERPRETER: "openrouter",
+      PIPELINE_RESOLVER: "model",
+      PIPELINE_MODEL: "openai/gpt-5.6-luna",
+      PIPELINE_MODEL_PRICE: "0.2/1.2/0.02",
+    });
+    expect(() => interpreterFor(config, {})).toThrow(/OPENROUTER_API_KEY/);
+    const env = { OPENROUTER_API_KEY: "sk-or-test" };
+    expect(interpreterFor(config, env)).toMatchObject({
+      provider: "openai@openrouter",
+      model: "openai/gpt-5.6-luna",
+    });
+    expect(resolverFor(config, env)).toMatchObject({ provider: "openai@openrouter" });
+  });
+
   it("reads limits as numbers and rejects nonsense", () => {
     const config = loadPipelineConfig({
       PIPELINE_MAX_CALLS_PER_PASS: "10",

@@ -25,7 +25,13 @@ import {
   type BaselinePrediction,
 } from "@/benchmark/baseline";
 import { loadExport, readJsonl } from "@/benchmark/dataset";
-import { anthropicClient, listModels, openaiClient, type Price } from "@/llm/client";
+import {
+  anthropicClient,
+  listModels,
+  openaiClient,
+  openrouterClient,
+  type Price,
+} from "@/llm/client";
 import {
   agreedIds,
   auditIds,
@@ -106,16 +112,18 @@ const USAGE = `Usage: npm run bench -- <command> [options]
             [--cursor MODEL[,param=value...]@IN/OUT]... [--limit N] [--concurrency 4]
   silver    --export DIR --sample DIR --annotator ID --drafts A_ID,B_ID [--unreviewed]
   interpret --export DIR --sample DIR --labels FILE[,FILE...]
-            (--rules | --cursor MODEL[,param=value...]@IN/OUT | --openai MODEL --openai-price IN/OUT)
+            (--rules | --cursor MODEL[,param=value...]@IN/OUT | --openai MODEL --openai-price IN/OUT
+             | --openrouter MAKER/MODEL --openrouter-price IN/OUT)
             [--budget-usd N] [--limit N] [--concurrency 4]
   resolve   --export DIR --sample DIR --labels FILE[,FILE...] --observations (labels | INTERPRETER_ID)
-            (--rules | --cursor MODEL[,param=value...]@IN/OUT | --openai MODEL --openai-price IN/OUT)
+            (--rules | --cursor MODEL[,param=value...]@IN/OUT | --openai MODEL --openai-price IN/OUT
+             | --openrouter MAKER/MODEL --openrouter-price IN/OUT)
             [--budget-usd N] [--limit N] [--concurrency 4]
   schema
 
 Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.
-API keys are read from the files named by OPENAI_API_KEY_FILE, ANTHROPIC_API_KEY_FILE and
-CURSOR_API_KEY_FILE.`;
+API keys are read from the files named by OPENAI_API_KEY_FILE, ANTHROPIC_API_KEY_FILE,
+CURSOR_API_KEY_FILE and OPENROUTER_API_KEY_FILE.`;
 
 function argValue(name: string): string | undefined {
   const at = process.argv.indexOf(name);
@@ -661,6 +669,7 @@ const KEY_FILES = {
   openai: "OPENAI_API_KEY_FILE",
   anthropic: "ANTHROPIC_API_KEY_FILE",
   cursor: "CURSOR_API_KEY_FILE",
+  openrouter: "OPENROUTER_API_KEY_FILE",
 } as const;
 
 /** What each key can reach, so a person picks the strongest model before anything is spent. */
@@ -811,11 +820,12 @@ function loadLabels(files: string[], data: ReturnType<typeof loadExport>) {
   return { labels, sources };
 }
 
-/** --rules, or the model client named by --cursor or --openai. */
+/** --rules, or the model client named by --cursor, --openai or --openrouter. */
 function modelChoice() {
   if (process.argv.includes("--rules")) return null;
   const spec = argValue("--cursor");
   const openaiModel = argValue("--openai");
+  const openrouterModel = argValue("--openrouter");
   const client = spec
     ? cursorClient({ key: loadApiKey(KEY_FILES.cursor), ...cursorSpec(spec) })
     : openaiModel
@@ -824,8 +834,17 @@ function modelChoice() {
           model: openaiModel,
           price: price("--openai-price"),
         })
-      : null;
-  if (!client) throw new Error(`Pass one of --rules, --cursor, --openai.\n\n${USAGE}`);
+      : openrouterModel
+        ? openrouterClient({
+            key: loadApiKey(KEY_FILES.openrouter),
+            model: openrouterModel,
+            price: price("--openrouter-price"),
+          })
+        : null;
+  if (!client)
+    throw new Error(
+      `Pass one of --rules, --cursor, --openai, --openrouter.\n\n${USAGE}`,
+    );
   return client;
 }
 
