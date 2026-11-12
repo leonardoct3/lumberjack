@@ -1,4 +1,5 @@
 export const FAIL_TOAST = "Não deu. Tenta de novo.";
+export const UNDO_LABEL = "Desfazer";
 export const TOAST = {
   up: "Subiu",
   down: "Desceu",
@@ -12,6 +13,7 @@ export const TOAST = {
   dismissed: "Dispensado",
   restored: "Devolvido para a fila",
   unlinked: "Desvinculado",
+  undone: "Vínculos desfeitos",
   saved: "Salvo",
   listening: "Ouvindo",
   paused: "Pausado",

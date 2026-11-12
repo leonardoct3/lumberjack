@@ -5,6 +5,7 @@ import type {
   ResolutionDecision,
   WaState,
 } from "@prisma/client";
+import { reviewCounts, type ReviewCounts } from "@/catalog/review";
 import { startOfDaySp } from "@/domain/timezone";
 
 type JobCounts = {
@@ -31,6 +32,8 @@ export type PipelineStatus = {
   deadByKind: Record<ProcessingStage, Partial<Record<FailureKind, number>>>;
   /** Shadow resolution proposals so far, by decision. */
   proposals: Record<ResolutionDecision, number>;
+  /** What the operator did with Inbox suggestions: the acceptance evidence for promotion. */
+  reviews: ReviewCounts;
   today: { succeeded: number; failed: number; costUsd: number };
 };
 
@@ -88,24 +91,26 @@ export async function pipelineStatus(
   db: PrismaClient,
   now: Date,
 ): Promise<PipelineStatus> {
-  const [lastStored, session, stages, decisions, runs, cost] = await Promise.all([
-    db.message.aggregate({ _max: { createdAt: true } }),
-    db.waSession.findUnique({
-      where: { id: "wa" },
-      select: { state: true, heartbeatAt: true },
-    }),
-    Promise.all(STAGES.map((stage) => stageCounts(db, stage, now))),
-    db.resolutionProposal.groupBy({ by: ["decision"], _count: { _all: true } }),
-    db.interpretationRun.groupBy({
-      by: ["status"],
-      where: { createdAt: { gte: startOfDaySp(now) } },
-      _count: { _all: true },
-    }),
-    db.interpretationRun.aggregate({
-      where: { createdAt: { gte: startOfDaySp(now) } },
-      _sum: { costUsd: true },
-    }),
-  ]);
+  const [lastStored, session, stages, decisions, runs, cost, reviews] =
+    await Promise.all([
+      db.message.aggregate({ _max: { createdAt: true } }),
+      db.waSession.findUnique({
+        where: { id: "wa" },
+        select: { state: true, heartbeatAt: true },
+      }),
+      Promise.all(STAGES.map((stage) => stageCounts(db, stage, now))),
+      db.resolutionProposal.groupBy({ by: ["decision"], _count: { _all: true } }),
+      db.interpretationRun.groupBy({
+        by: ["status"],
+        where: { createdAt: { gte: startOfDaySp(now) } },
+        _count: { _all: true },
+      }),
+      db.interpretationRun.aggregate({
+        where: { createdAt: { gte: startOfDaySp(now) } },
+        _sum: { costUsd: true },
+      }),
+      reviewCounts(db),
+    ]);
 
   const runCount = (status: string) =>
     runs.find((row) => row.status === status)?._count._all ?? 0;
@@ -130,6 +135,7 @@ export async function pipelineStatus(
       abstain: decided("abstain"),
       not_mentioned: decided("not_mentioned"),
     },
+    reviews,
     today: {
       succeeded: runCount("succeeded"),
       failed: runCount("failed"),

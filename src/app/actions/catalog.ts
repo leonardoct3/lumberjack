@@ -8,6 +8,7 @@ import { dismissOrphan, restoreOrphan } from "@/catalog/dismiss-orphan";
 import { linkOrphan, linkOrphans } from "@/catalog/link-orphan";
 import { reclassifyMessage } from "@/catalog/reclassify-message";
 import { rejectCandidate } from "@/catalog/reject";
+import { recordReviews, undoLinks } from "@/catalog/review";
 import { prisma } from "@/db/client";
 import {
   formAliases,
@@ -20,6 +21,23 @@ import {
   optionalUrl,
   requiredFormText,
 } from "@/lib/form";
+import { inboxMode } from "@/pipeline/config";
+
+/**
+ * Feedback on what the Inbox suggested. It runs after the change and only logs on
+ * failure: a lost record must not turn a completed link into an error toast.
+ */
+async function review(input: Parameters<typeof recordReviews>[1]): Promise<void> {
+  if (inboxMode() !== "suggest") return;
+  try {
+    await recordReviews(prisma, input, new Date());
+  } catch (err) {
+    console.error(
+      "inbox review not recorded:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
 
 export async function actionConfirmCandidate(formData: FormData) {
   await verifyOperatorSession();
@@ -56,14 +74,29 @@ export async function actionLinkOrphan(formData: FormData) {
   const messageId = formId(formData, "messageId");
   const partyId = formId(formData, "partyId");
   await linkOrphan(prisma, { messageId, partyId });
+  await review({ messageIds: [messageId], action: "linked", chosenPartyId: partyId });
   revalidatePath("/inbox");
 }
 
-export async function actionLinkOrphans(formData: FormData) {
+/** Returns what it linked, so the toast can offer to take back exactly that. */
+export async function actionLinkOrphans(
+  formData: FormData,
+): Promise<{ partyId: string; linkedIds: string[] }> {
   await verifyOperatorSession();
   const partyId = formId(formData, "partyId");
   const messageIds = formIds(formData, "messageIds");
-  await linkOrphans(prisma, { messageIds, partyId });
+  const { linkedIds } = await linkOrphans(prisma, { messageIds, partyId });
+  await review({ messageIds: linkedIds, action: "linked", chosenPartyId: partyId });
+  revalidatePath("/inbox");
+  return { partyId, linkedIds };
+}
+
+export async function actionUndoLinks(formData: FormData) {
+  await verifyOperatorSession();
+  const partyId = formId(formData, "partyId");
+  const messageIds = formIds(formData, "messageIds");
+  const undone = await undoLinks(prisma, { partyId, messageIds });
+  await review({ messageIds: undone, action: "undone", chosenPartyId: partyId });
   revalidatePath("/inbox");
 }
 
@@ -72,7 +105,7 @@ export async function actionCreatePartyFromMessage(formData: FormData) {
   const messageId = formId(formData, "messageId");
   const name = requiredFormText(formData, "name");
 
-  await createPartyFromMessage(
+  const { partyId } = await createPartyFromMessage(
     prisma,
     {
       messageId,
@@ -82,6 +115,7 @@ export async function actionCreatePartyFromMessage(formData: FormData) {
     },
     new Date(),
   );
+  await review({ messageIds: [messageId], action: "created", chosenPartyId: partyId });
   revalidatePath("/inbox");
   revalidatePath("/heat");
 }
@@ -90,6 +124,7 @@ export async function actionDismissOrphan(formData: FormData) {
   await verifyOperatorSession();
   const messageId = formId(formData, "messageId");
   await dismissOrphan(prisma, messageId, new Date());
+  await review({ messageIds: [messageId], action: "dismissed" });
   revalidatePath("/inbox");
 }
 

@@ -18,6 +18,7 @@ import {
   actionLinkOrphan,
   actionLinkOrphans,
   actionRestoreOrphan,
+  actionUndoLinks,
 } from "@/app/actions/catalog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,8 +28,18 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SectionHeader } from "@/components/ui/page-header";
 import { ReachBadge } from "@/components/ui/reach-badge";
+import {
+  clusterSuggestions,
+  type Cluster,
+  type Suggestion,
+} from "@/features/inbox/suggestions";
 import { TOAST } from "@/lib/toast-copy";
 import { SimilarWarning } from "./similar-warning";
+import {
+  EvidenceText,
+  SuggestionClusters,
+  SuggestionNote,
+} from "./suggestion-clusters";
 import { useRowActions } from "./use-row-actions";
 
 export type InboxOrphan = {
@@ -39,6 +50,8 @@ export type InboxOrphan = {
   sentAtLabel: string;
   suggestedEventAtLocal: string;
   defaultPartyId: string;
+  /** Null when suggestions are off or the resolver has not read the message yet. */
+  suggestion: Suggestion | null;
 };
 
 export type DismissedOrphan = {
@@ -63,10 +76,20 @@ export function OrphanList(props: {
   const [newName, setNewName] = useState("");
   const [selected, setSelected] = useState(() => new Set<string>());
   const [bulkPartyId, setBulkPartyId] = useState("");
+  const [takenOut, setTakenOut] = useState(() => new Set<string>());
 
   const hasParties = upcoming.length > 0;
-  const shown = orphans.slice(0, visible);
-  const remaining = orphans.length - shown.length;
+  const byId = useMemo(() => new Map(orphans.map((o) => [o.id, o])), [orphans]);
+  const clusters = useMemo(
+    () => clusterSuggestions(orphans.filter((o) => !takenOut.has(o.id))),
+    [orphans, takenOut],
+  );
+  const listed = useMemo(() => {
+    const clustered = new Set(clusters.flatMap((c) => c.memberIds));
+    return orphans.filter((o) => !clustered.has(o.id));
+  }, [orphans, clusters]);
+  const shown = listed.slice(0, visible);
+  const remaining = listed.length - shown.length;
   const selectedOrphans = useMemo(
     () => orphans.filter((o) => selected.has(o.id)),
     [orphans, selected],
@@ -82,9 +105,38 @@ export function OrphanList(props: {
   }, [selectedOrphans]);
   const effectivePartyId = bulkPartyId || sharedSuggestion;
 
-  function openCreate(id: string) {
+  function openCreate(id: string, name = "") {
     setCreatingFor(id);
-    setNewName("");
+    setNewName(name);
+  }
+
+  /** The toast button that takes back exactly what one bulk link created. */
+  function undoFor(value: { partyId: string; linkedIds: string[] }) {
+    if (value.linkedIds.length === 0) return null;
+    return () => {
+      const fd = new FormData();
+      fd.set("partyId", value.partyId);
+      for (const id of value.linkedIds) fd.append("messageIds", id);
+      submit(`undo-${value.partyId}`, actionUndoLinks, fd, TOAST.undone);
+    };
+  }
+
+  function linkCluster(cluster: Cluster) {
+    const fd = new FormData();
+    fd.set("partyId", cluster.party.id);
+    for (const id of cluster.memberIds) fd.append("messageIds", id);
+    submit(
+      `cluster-${cluster.party.id}`,
+      actionLinkOrphans,
+      fd,
+      TOAST.linkedMany,
+      undefined,
+      undoFor,
+    );
+  }
+
+  function takeOut(id: string) {
+    setTakenOut((prev) => new Set(prev).add(id));
   }
 
   function closeCreate() {
@@ -106,17 +158,32 @@ export function OrphanList(props: {
     const fd = new FormData();
     fd.set("partyId", effectivePartyId);
     for (const id of selectedIds) fd.append("messageIds", id);
-    submit("bulk", actionLinkOrphans, fd, TOAST.linkedMany, () => {
-      setSelected(new Set());
-      setBulkPartyId("");
-    });
+    submit(
+      "bulk",
+      actionLinkOrphans,
+      fd,
+      TOAST.linkedMany,
+      () => {
+        setSelected(new Set());
+        setBulkPartyId("");
+      },
+      undoFor,
+    );
   }
 
   return (
     <section className="space-y-4">
+      <SuggestionClusters
+        clusters={clusters}
+        orphans={byId}
+        pendingIds={pendingIds}
+        onLink={linkCluster}
+        onTakeOut={takeOut}
+      />
+
       <SectionHeader
         title="Sinais órfãos"
-        count={orphans.length}
+        count={listed.length}
         description="Vincule a uma festa ativa, crie a festa que ainda não existe, ou dispense."
       />
 
@@ -168,7 +235,7 @@ export function OrphanList(props: {
           icon={Link2}
           compact
         />
-      ) : (
+      ) : listed.length === 0 ? null : (
         <div className="space-y-3">
           {shown.map((orphan) => {
             const busy = pendingIds.has(orphan.id);
@@ -201,7 +268,19 @@ export function OrphanList(props: {
                   </span>
                 </div>
 
-                <p className="text-sm leading-6 text-foreground">{orphan.text}</p>
+                {orphan.suggestion ? (
+                  <EvidenceText text={orphan.text} spans={orphan.suggestion.spans} />
+                ) : (
+                  <p className="text-sm leading-6 text-foreground">{orphan.text}</p>
+                )}
+
+                {orphan.suggestion && !creating ? (
+                  <SuggestionNote
+                    suggestion={orphan.suggestion}
+                    disabled={busy}
+                    onCreate={(name) => openCreate(orphan.id, name)}
+                  />
+                ) : null}
 
                 {creating ? (
                   <form

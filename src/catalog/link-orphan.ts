@@ -12,7 +12,7 @@ export type LinkOrphanInput = {
 export async function linkOrphans(
   db: PrismaClient,
   input: { messageIds: string[]; partyId: string },
-): Promise<{ linked: number; skipped: number }> {
+): Promise<{ linked: number; skipped: number; linkedIds: string[] }> {
   const party = await db.party.findUniqueOrThrow({
     where: { id: input.partyId },
   });
@@ -20,7 +20,7 @@ export async function linkOrphans(
     throw new Error("linkOrphans requires an upcoming party");
   }
 
-  let linked = 0;
+  const linkedIds: string[] = [];
   let skipped = 0;
   for (const messageId of input.messageIds) {
     const message = await db.message.findUniqueOrThrow({
@@ -36,10 +36,10 @@ export async function linkOrphans(
     }
 
     await linkOrphan(db, { messageId, partyId: input.partyId });
-    linked += 1;
+    linkedIds.push(messageId);
   }
 
-  return { linked, skipped };
+  return { linked: linkedIds.length, skipped, linkedIds };
 }
 
 export async function linkOrphan(
@@ -62,8 +62,7 @@ export async function linkOrphan(
     throw new Error("linkOrphan requires pista_oferta or pista_procura");
   }
 
-  const type: SignalType =
-    message.class === "pista_oferta" ? "offer" : "demand";
+  const type: SignalType = message.class === "pista_oferta" ? "offer" : "demand";
 
   await db.$transaction([
     db.signal.create({

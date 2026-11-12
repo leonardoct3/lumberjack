@@ -50,6 +50,10 @@ describe("pipelineStatus", () => {
       jobs: { interpret: IDLE, resolve: IDLE },
       deadByKind: { interpret: {}, resolve: {} },
       proposals: { link: 0, new_event: 0, abstain: 0, not_mentioned: 0 },
+      reviews: {
+        bySuggestion: { link: {}, new_event: {}, doubt: {}, none: {} },
+        linkAccepted: 0,
+      },
       today: { succeeded: 0, failed: 0, costUsd: 0 },
     });
   });

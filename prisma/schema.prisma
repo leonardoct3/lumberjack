@@ -93,6 +93,7 @@ model Message {
   interpretationRuns InterpretationRun[]
   observations       Observation[]
   resolutions        ResolutionProposal[]
+  reviews            ProposalReview[]
 
   /** Operator sent this orphan away without linking it; keeps the Inbox drainable. */
   dismissedAt  DateTime?
@@ -371,6 +372,40 @@ model ResolutionProposal {
   @@unique([runId, observationId])
   @@index([messageId])
   @@index([partyId])
+}
+
+enum SuggestionKind {
+  link
+  new_event
+  doubt
+}
+
+enum ReviewAction {
+  linked
+  created
+  dismissed
+  undone
+}
+
+/**
+ * What the operator did with an orphan while the Inbox showed suggestions, beside
+ * what was suggested. Acceptance is read from these, never written into a prompt.
+ */
+model ProposalReview {
+  id               String          @id @default(cuid())
+  message          Message         @relation(fields: [messageId], references: [id])
+  messageId        String
+  action           ReviewAction
+  /** No foreign keys to parties, for the same reason as on proposals. */
+  chosenPartyId    String?
+  /** Null when the message had no resolve run yet. */
+  suggestion       SuggestionKind?
+  suggestedPartyId String?
+  runId            String?
+  createdAt        DateTime        @default(now())
+
+  @@index([messageId])
+  @@index([createdAt])
 }
 
 /** Singleton row (`id = "wa"`) shared by the web board and the connector process. */
