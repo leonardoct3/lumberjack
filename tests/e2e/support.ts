@@ -11,6 +11,8 @@ export async function seedOperatorWorkflow(): Promise<void> {
     await db.signal.deleteMany();
     await db.lot.deleteMany();
     await db.partyCandidate.deleteMany();
+    await db.proposalReview.deleteMany();
+    await db.resolutionProposal.deleteMany();
     await db.observation.deleteMany();
     await db.processingJob.deleteMany();
     await db.interpretationRun.deleteMany();

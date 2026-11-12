@@ -14,16 +14,17 @@ export function useRowActions() {
   const [pendingIds, setPendingIds] = useState(() => new Set<string>());
 
   const submit = useCallback(
-    (
+    <T>(
       id: string,
-      action: (data: FormData) => Promise<void>,
+      action: (data: FormData) => Promise<T>,
       data: FormData,
       success: string,
       onSuccess?: () => void,
+      undo?: (value: T) => (() => void) | null,
     ) => {
       setPendingIds((prev) => new Set(prev).add(id));
       start(() => {
-        void runAction(action, data, success, () => router.refresh())
+        void runAction(action, data, success, () => router.refresh(), undo)
           .then((ok) => {
             if (ok) onSuccess?.();
           })

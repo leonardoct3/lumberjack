@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { loadPipelineConfig } from "@/pipeline/config";
+import { describe, expect, it, vi } from "vitest";
+import { inboxMode, loadPipelineConfig } from "@/pipeline/config";
 import { interpreterFor, resolverFor } from "@/pipeline/interpreters";
 
 describe("loadPipelineConfig", () => {
@@ -9,6 +9,7 @@ describe("loadPipelineConfig", () => {
       resolve: "off",
       projection: "off",
       recommendations: "off",
+      inbox: "off",
       interpreter: "rules",
       resolver: "rules",
       model: null,
@@ -51,6 +52,21 @@ describe("loadPipelineConfig", () => {
       paid: true,
     });
     expect(resolverFor(loadPipelineConfig({})).name).toBe("rules");
+  });
+
+  it("shows suggestions only when asked, and never lets a bad flag break the Inbox", () => {
+    expect(loadPipelineConfig({ PIPELINE_INBOX: "suggest" }).inbox).toBe("suggest");
+    expect(() => loadPipelineConfig({ PIPELINE_INBOX: "auto" })).toThrow(
+      /PIPELINE_INBOX/,
+    );
+    expect(inboxMode({ PIPELINE_INBOX: "suggest" })).toBe("suggest");
+    expect(inboxMode({})).toBe("off");
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(inboxMode({ PIPELINE_INBOX: "suggest", PIPELINE_RESOLVE: "shadow" })).toBe(
+      "off",
+    );
+    expect(error).toHaveBeenCalledOnce();
+    error.mockRestore();
   });
 
   it("refuses to switch on stages that do not exist yet, rather than ignoring the flag", () => {

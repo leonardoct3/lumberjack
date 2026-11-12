@@ -11,7 +11,9 @@ import { verifyOperatorSession } from "@/auth/session";
 import { extractCandidate } from "@/domain/extract";
 import { matchParty } from "@/domain/match";
 import { NOT_MUTED, orphanWhere, unclassifiedWhere } from "@/features/inbox/queries";
+import { loadSuggestions, type Suggestion } from "@/features/inbox/suggestions";
 import { formatWhen, toDatetimeLocal } from "@/lib/datetime";
+import { inboxMode } from "@/pipeline/config";
 
 export const metadata: Metadata = { title: "Inbox de sinais" };
 
@@ -57,6 +59,14 @@ export default async function InboxPage() {
       orderBy: { eventAt: "asc" },
     }),
   ]);
+
+  const suggestions =
+    inboxMode() === "suggest"
+      ? await loadSuggestions(
+          prisma,
+          orphans.map((m) => m.id),
+        )
+      : new Map<string, Suggestion>();
 
   const matchInputs = upcoming.map((party) => ({
     id: party.id,
@@ -122,16 +132,25 @@ export default async function InboxPage() {
   const mappedOrphans: InboxOrphan[] = orphans.map((message) => {
     // Pista text rarely names a party cleanly, but it usually carries the date.
     const guessedEventAt = extractCandidate(message.text, message.sentAt).eventAt;
+    const suggestion = suggestions.get(message.id) ?? null;
+    // A resolver in doubt preselects nothing: the old matcher's guess would read as its answer.
+    const defaultPartyId =
+      suggestion?.kind === "link"
+        ? suggestion.party.id
+        : suggestion?.kind === "doubt"
+          ? ""
+          : (matchParty(message.text, matchInputs)?.id ?? "");
     return {
       id: message.id,
       text: message.text,
       sender: message.sender.name ?? message.sender.waId,
       groupReach: groupReach(message),
       sentAtLabel: formatWhen(message.sentAt.toISOString()),
-      suggestedEventAtLocal: guessedEventAt
-        ? toDatetimeLocal(guessedEventAt.toISOString())
-        : "",
-      defaultPartyId: matchParty(message.text, matchInputs)?.id ?? "",
+      suggestedEventAtLocal:
+        (suggestion?.kind === "new_event" ? suggestion.eventAtLocal : null) ??
+        (guessedEventAt ? toDatetimeLocal(guessedEventAt.toISOString()) : ""),
+      defaultPartyId,
+      suggestion,
     };
   });
 

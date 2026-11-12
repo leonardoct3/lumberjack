@@ -25,6 +25,8 @@ const schema = z
     PIPELINE_RESOLVE: z.enum(["off", "shadow"]).default("off"),
     PIPELINE_PROJECTION: z.literal("off").default("off"),
     PIPELINE_RECOMMENDATIONS: z.literal("off").default("off"),
+    /** "suggest" shows shadow proposals in the Inbox; only an operator click links anything. */
+    PIPELINE_INBOX: z.enum(["off", "suggest"]).default("off"),
     PIPELINE_INTERPRETER: z
       .enum(["rules", "openai", "anthropic", "openrouter"])
       .default("rules"),
@@ -76,6 +78,7 @@ export type PipelineConfig = {
   resolve: "off" | "shadow";
   projection: "off";
   recommendations: "off";
+  inbox: "off" | "suggest";
   interpreter: "rules" | "openai" | "anthropic" | "openrouter";
   resolver: "rules" | "model";
   model: ModelSettings | null;
@@ -102,6 +105,7 @@ export function loadPipelineConfig(
     resolve: value.PIPELINE_RESOLVE,
     projection: value.PIPELINE_PROJECTION,
     recommendations: value.PIPELINE_RECOMMENDATIONS,
+    inbox: value.PIPELINE_INBOX,
     interpreter,
     resolver: value.PIPELINE_RESOLVER,
     model:
@@ -117,4 +121,19 @@ export function loadPipelineConfig(
     leaseMs: value.PIPELINE_LEASE_MS,
     callTimeoutMs: value.PIPELINE_CALL_TIMEOUT_MS,
   };
+}
+
+/** The web service only reads proposals, so a flag it cannot parse must not take the Inbox down. */
+export function inboxMode(
+  env: Record<string, string | undefined> = process.env,
+): "off" | "suggest" {
+  try {
+    return loadPipelineConfig(env).inbox;
+  } catch (err) {
+    console.error(
+      "pipeline flags ignored, Inbox without suggestions:",
+      err instanceof Error ? err.message : err,
+    );
+    return "off";
+  }
 }

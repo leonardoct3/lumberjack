@@ -21,6 +21,31 @@ describe("runAction", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
+  it("offers to undo what the action returned, and only when there is something", async () => {
+    const onUndo = vi.fn();
+    const undo = (value: { linked: string[] }) => (value.linked.length ? onUndo : null);
+
+    await runAction(
+      async () => ({ linked: ["m-1"] }),
+      new FormData(),
+      "Feito",
+      vi.fn(),
+      undo,
+    );
+    await runAction(
+      async () => ({ linked: [] }),
+      new FormData(),
+      "Feito",
+      vi.fn(),
+      undo,
+    );
+
+    expect(toast.success).toHaveBeenNthCalledWith(1, "Feito", {
+      action: { label: "Desfazer", onClick: onUndo },
+    });
+    expect(toast.success).toHaveBeenNthCalledWith(2, "Feito");
+  });
+
   it("reports failure and does not refresh when the action throws", async () => {
     const refresh = vi.fn();
     const ok = await runAction(

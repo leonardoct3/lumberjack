@@ -1,17 +1,25 @@
 "use client";
 
 import { toast } from "sonner";
-import { FAIL_TOAST } from "@/lib/toast-copy";
+import { FAIL_TOAST, UNDO_LABEL } from "@/lib/toast-copy";
 
-export async function runAction(
-  action: (data: FormData) => Promise<void>,
+/**
+ * `undo` reads what the action returned and, when there is something to take
+ * back, gives the success toast a button that does it.
+ */
+export async function runAction<T>(
+  action: (data: FormData) => Promise<T>,
   data: FormData,
   success: string,
   refresh: () => void,
+  undo?: (value: T) => (() => void) | null,
 ): Promise<boolean> {
   try {
-    await action(data);
-    toast.success(success);
+    const value = await action(data);
+    const onUndo = undo?.(value);
+    if (onUndo)
+      toast.success(success, { action: { label: UNDO_LABEL, onClick: onUndo } });
+    else toast.success(success);
     refresh();
     return true;
   } catch {

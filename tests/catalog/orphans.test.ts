@@ -224,9 +224,7 @@ describe("dismissOrphan", () => {
       now,
     );
 
-    await expect(dismissOrphan(prisma, message.id, now)).rejects.toThrow(
-      /already/,
-    );
+    await expect(dismissOrphan(prisma, message.id, now)).rejects.toThrow(/already/);
   });
 });
 
@@ -267,6 +265,7 @@ describe("linkOrphans", () => {
 
     expect(result.linked).toBe(1);
     expect(result.skipped).toBe(1);
+    expect(result.linkedIds).toEqual([b.id]);
     expect(await prisma.signal.count()).toBe(2);
   });
 
