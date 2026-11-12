@@ -25,7 +25,7 @@ export const COMPARE_VERSION = 2;
  * Only what the message writes counts: an empty or "absent" date is no date, and an
  * inferred one is the linked event's date, which the party comparison already covers.
  */
-function writtenDate(date: Observation["eventDate"]) {
+export function writtenDate(date: Observation["eventDate"]) {
   if (!date || date.basis !== "explicit") return null;
   if (date.year == null && date.month == null && date.day == null) return null;
   return [date.year, date.month, date.day];

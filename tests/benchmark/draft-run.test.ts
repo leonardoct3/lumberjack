@@ -10,11 +10,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readJsonl } from "@/benchmark/dataset";
 import {
-  type DraftCall,
-  DraftError,
-  type Drafter,
-  type DraftReply,
-} from "@/benchmark/draft/providers";
+  type ModelCall,
+  ModelError,
+  type ModelClient,
+  type ModelReply,
+} from "@/llm/client";
 import { RETENTION, runDrafts, type DraftRunOptions } from "@/benchmark/draft/run";
 import { exportWith, item, message, offerDraft } from "./draft-fixture";
 
@@ -33,9 +33,9 @@ const items = [
 
 function fakeDrafter(
   id: string,
-  answer: (call: DraftCall, n: number) => DraftReply | Promise<DraftReply>,
-): Drafter & { calls: DraftCall[] } {
-  const calls: DraftCall[] = [];
+  answer: (call: ModelCall, n: number) => ModelReply | Promise<ModelReply>,
+): ModelClient & { calls: ModelCall[] } {
+  const calls: ModelCall[] = [];
   return {
     id,
     provider: id.startsWith("openai") ? "openai" : "anthropic",
@@ -43,7 +43,7 @@ function fakeDrafter(
     model: id,
     price: { inputPerMTok: 1, outputPerMTok: 1 },
     calls,
-    async draft(call) {
+    async complete(call) {
       calls.push(call);
       return answer(call, calls.length);
     },
@@ -51,11 +51,11 @@ function fakeDrafter(
 }
 
 const usage = { inputTokens: 1000, outputTokens: 1000 };
-const good = (): DraftReply => ({ output: offerDraft("vendo syon fem"), usage });
+const good = (): ModelReply => ({ output: offerDraft("vendo syon fem"), usage });
 
 function options(
   dir: string,
-  drafters: Drafter[],
+  drafters: ModelClient[],
   over: Partial<DraftRunOptions> = {},
 ): DraftRunOptions {
   return {
@@ -163,7 +163,7 @@ describe("runDrafts", () => {
 
   it("retries transient errors and aborts on a fatal one", async () => {
     const flaky = fakeDrafter("openai-a", (_, n) => {
-      if (n === 1) throw new DraftError("transient", "HTTP 429");
+      if (n === 1) throw new ModelError("transient", "HTTP 429");
       return good();
     });
     const report = await runDrafts(options(tempDir(), [flaky], { limit: 1 }));
@@ -171,7 +171,7 @@ describe("runDrafts", () => {
 
     const dir = tempDir();
     const denied = fakeDrafter("anthropic-b", () => {
-      throw new DraftError("fatal", "HTTP 401: invalid x-api-key");
+      throw new ModelError("fatal", "HTTP 401: invalid x-api-key");
     });
     const aborted = await runDrafts(options(dir, [denied], { concurrency: 1 }));
     expect(aborted.abortedBy).toBe("anthropic-b: HTTP 401: invalid x-api-key");

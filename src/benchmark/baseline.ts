@@ -150,7 +150,7 @@ const ratio = (a: number, b: number) => (b === 0 ? null : a / b);
 
 export function scoreIntents(
   gold: Annotation[],
-  predictions: BaselinePrediction[],
+  predictions: Pick<BaselinePrediction, "messageId" | "intents">[],
 ): IntentReport {
   const predicted = new Map(predictions.map((p) => [p.messageId, new Set(p.intents)]));
   const counts: Record<string, { tp: number; fp: number; fn: number }> = {};

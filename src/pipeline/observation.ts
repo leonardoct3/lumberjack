@@ -36,15 +36,25 @@ export type InterpretedObservation = z.infer<typeof interpretedObservationSchema
 /** All or nothing: one unsupported observation rejects the whole output. */
 export function validateInterpretation(
   raw: unknown,
-  text: string,
+  request: { text: string; context: { id: string }[] },
 ): { observations: InterpretedObservation[] | null; errors: string[] } {
   const parsed = interpretationSchema.safeParse(raw);
   if (!parsed.success)
     return { observations: null, errors: formatIssues(parsed.error, "output") };
 
-  const errors = parsed.data.observations.flatMap((observation, i) =>
-    evidenceErrors(observation, text, `observations[${i}]`),
-  );
+  const earlier = new Set(request.context.map((c) => c.id));
+  const errors = parsed.data.observations.flatMap((observation, i) => {
+    const at = `observations[${i}]`;
+    const { relatedMessage } = observation.relationship;
+    return [
+      ...evidenceErrors(observation, request.text, at),
+      ...(relatedMessage != null && !earlier.has(relatedMessage)
+        ? [
+            `${at}.relationship.relatedMessage ${relatedMessage} is not an earlier message id`,
+          ]
+        : []),
+    ];
+  });
   return errors.length > 0
     ? { observations: null, errors }
     : { observations: parsed.data.observations, errors: [] };

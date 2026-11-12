@@ -25,12 +25,7 @@ import {
   type BaselinePrediction,
 } from "@/benchmark/baseline";
 import { loadExport, readJsonl } from "@/benchmark/dataset";
-import {
-  anthropicDrafter,
-  listModels,
-  openaiDrafter,
-  type Price,
-} from "@/benchmark/draft/providers";
+import { anthropicClient, listModels, openaiClient, type Price } from "@/llm/client";
 import {
   agreedIds,
   auditIds,
@@ -39,9 +34,22 @@ import {
   COMPARE_VERSION,
   type ReviewPlan,
 } from "@/benchmark/draft/compare";
-import { cursorDrafter, listCursorModels } from "@/benchmark/draft/cursor";
+import { cursorClient, listCursorModels } from "@/benchmark/draft/cursor";
 import { runDrafts } from "@/benchmark/draft/run";
 import { exportDataset } from "@/benchmark/export";
+import {
+  latestResults,
+  runInterpretations,
+  scoreInterpretations,
+  type InterpretationRecord,
+} from "@/benchmark/interpret";
+import { INTERPRETER_GUIDE, renderRequest } from "@/pipeline/interpreters/guide";
+import {
+  INTERPRETATION_JSON_SCHEMA,
+  MAX_OUTPUT_TOKENS,
+  modelInterpreter,
+} from "@/pipeline/interpreters/model";
+import { rulesInterpreter } from "@/pipeline/interpreters/rules";
 import { buildInventory } from "@/benchmark/inventory";
 import type { LabelItem } from "@/benchmark/label/item";
 import { startLabelServer } from "@/benchmark/label/server";
@@ -80,6 +88,9 @@ const USAGE = `Usage: npm run bench -- <command> [options]
             [--openai MODEL --openai-price IN/OUT] [--anthropic MODEL --anthropic-price IN/OUT]
             [--cursor MODEL[,param=value...]@IN/OUT]... [--limit N] [--concurrency 4]
   silver    --export DIR --sample DIR --annotator ID --drafts A_ID,B_ID [--unreviewed]
+  interpret --export DIR --sample DIR --labels FILE[,FILE...]
+            (--rules | --cursor MODEL[,param=value...]@IN/OUT | --openai MODEL --openai-price IN/OUT)
+            [--budget-usd N] [--limit N] [--concurrency 4]
   schema
 
 Dates are São Paulo calendar days; --to is exclusive. Every path must be outside the repository.
@@ -718,10 +729,10 @@ async function draft(): Promise<void> {
   }
   const cursorKey = viaCursor.length > 0 ? loadApiKey(KEY_FILES.cursor) : "";
   const drafters = [
-    ...viaCursor.map((spec) => cursorDrafter({ key: cursorKey, ...spec })),
+    ...viaCursor.map((spec) => cursorClient({ key: cursorKey, ...spec })),
     ...(openaiModel
       ? [
-          openaiDrafter({
+          openaiClient({
             key: loadApiKey(KEY_FILES.openai),
             model: openaiModel,
             price: price("--openai-price"),
@@ -730,7 +741,7 @@ async function draft(): Promise<void> {
       : []),
     ...(anthropicModel
       ? [
-          anthropicDrafter({
+          anthropicClient({
             key: loadApiKey(KEY_FILES.anthropic),
             model: anthropicModel,
             price: price("--anthropic-price"),
@@ -755,6 +766,125 @@ async function draft(): Promise<void> {
   if (report.abortedBy) throw new Error(`Stopped: ${report.abortedBy}`);
 }
 
+/** Labels from several files, the first file winning: list human labels before silver. */
+function loadLabels(files: string[], data: ReturnType<typeof loadExport>) {
+  const texts = new Map(data.messages.map((m) => [m.id, m.text]));
+  const labels = new Map<string, Annotation>();
+  const sources = files.map((raw) => {
+    const file = assertOutsideRepo(raw);
+    let accepted = 0;
+    let rejected = 0;
+    for (const record of latestAnnotations(readJsonl<{ messageId?: unknown }>(file))) {
+      const text =
+        typeof record.messageId === "string" ? texts.get(record.messageId) : undefined;
+      const result = text == null ? null : validateAnnotation(record, { text });
+      if (!result?.annotation || result.errors.length > 0) {
+        rejected++;
+        continue;
+      }
+      if (labels.has(result.annotation.messageId)) continue;
+      labels.set(result.annotation.messageId, result.annotation);
+      accepted++;
+    }
+    return { file: path.basename(file), sha256: sha256File(file), accepted, rejected };
+  });
+  return { labels, sources };
+}
+
+function interpreterChoice() {
+  if (process.argv.includes("--rules"))
+    return { id: "rules", interpreter: rulesInterpreter, client: null };
+  const spec = argValue("--cursor");
+  const openaiModel = argValue("--openai");
+  const client = spec
+    ? cursorClient({ key: loadApiKey(KEY_FILES.cursor), ...cursorSpec(spec) })
+    : openaiModel
+      ? openaiClient({
+          key: loadApiKey(KEY_FILES.openai),
+          model: openaiModel,
+          price: price("--openai-price"),
+        })
+      : null;
+  if (!client) throw new Error(`Pass one of --rules, --cursor, --openai.\n\n${USAGE}`);
+  return { id: client.id, interpreter: modelInterpreter(client), client };
+}
+
+/**
+ * Runs one interpreter over every labelled item and scores it; rerunning
+ * resumes where it stopped and rescores everything answered so far.
+ */
+async function interpret(): Promise<void> {
+  const { sampleDir, data, items } = loadSample();
+  const { labels, sources } = loadLabels(required("--labels").split(","), data);
+  const { id, interpreter, client } = interpreterChoice();
+  const budgetUsd = client ? Number(required("--budget-usd")) : 0;
+  if (client && (!Number.isFinite(budgetUsd) || budgetUsd <= 0))
+    throw new Error("--budget-usd must be positive");
+
+  const fixed =
+    INTERPRETER_GUIDE.length + JSON.stringify(INTERPRETATION_JSON_SCHEMA).length;
+  const reserveUsd = (request: Parameters<typeof renderRequest>[0]) => {
+    if (!client) return 0;
+    const input =
+      Math.ceil((fixed + renderRequest(request).length) / 3) +
+      (client.promptOverheadTokens ?? 0);
+    // Room for the corrective retry as well.
+    return (
+      (2 *
+        (input * client.price.inputPerMTok +
+          MAX_OUTPUT_TOKENS * client.price.outputPerMTok)) /
+      1e6
+    );
+  };
+
+  const labelled = items.filter((i) => i.excluded == null && labels.has(i.messageId));
+  const dir = path.join(sampleDir, "interpretations");
+  const file = path.join(dir, `${id}.jsonl`);
+  const limit = argValue("--limit");
+  const run = await runInterpretations({
+    data,
+    items: labelled,
+    interpreter,
+    file,
+    budgetUsd,
+    reserveUsd,
+    concurrency: positiveInt("--concurrency", 4),
+    limit: limit == null ? undefined : positiveInt("--limit", 0),
+    log: (line) => console.error(line),
+  });
+
+  const results = latestResults(readJsonl<InterpretationRecord>(file));
+  const scored = (keep: (i: LabelItem) => boolean) =>
+    scoreInterpretations(
+      labelled
+        .filter((i) => keep(i) && results.has(i.messageId))
+        .map((i) => labels.get(i.messageId)!),
+      results,
+    );
+  const report = {
+    createdAt: new Date().toISOString(),
+    repoRevision: repoRevision(),
+    run,
+    labels: { sources, usable: labelled.length, answered: results.size },
+    caveat:
+      "Labels are mostly two models agreeing, with contested messages left out, so scores lean towards easier messages. Never score either drafting model on them.",
+    scores: {
+      all: scored(() => true),
+      random: scored((i) => i.set === "random"),
+      challenge: scored((i) => i.set === "challenge"),
+      heldOutTest: scored((i) => i.split === "test"),
+    },
+  };
+  const out = path.join(
+    dir,
+    `report-${id}-${report.createdAt.replace(/[:.]/g, "-")}.json`,
+  );
+  writeJson(out, report);
+  console.error(`wrote ${out}`);
+  console.log(JSON.stringify(run, null, 2));
+  if (run.abortedBy) throw new Error(`Stopped: ${run.abortedBy}`);
+}
+
 const COMMANDS: Record<string, () => Promise<void>> = {
   inventory,
   export: exportCommand,
@@ -764,6 +894,7 @@ const COMMANDS: Record<string, () => Promise<void>> = {
   models,
   draft,
   silver,
+  interpret,
   schema: async () => {
     process.stdout.write(`${JSON.stringify(annotationJsonSchema(), null, 2)}\n`);
   },

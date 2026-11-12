@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { startOfDaySp } from "@/domain/timezone";
 import type { PipelineConfig } from "./config";
+import { loadContext } from "./context";
 import {
   InterpreterError,
   type CatalogEntry,
@@ -39,7 +40,14 @@ export function requestHashes(request: InterpretationRequest) {
     inputHash: hash({ text: request.text, sentAt: request.sentAt.toISOString() }),
     contextHash: hash({
       senderRole: request.senderRole,
-      catalog: request.catalog.map((p) => [p.id, p.name, p.aliases, p.status]),
+      context: request.context.map((c) => [c.id, c.sameGroup, c.sameSender]),
+      catalog: request.catalog.map((p) => [
+        p.id,
+        p.name,
+        p.aliases,
+        p.status,
+        p.eventAt.toISOString(),
+      ]),
     }),
   };
 }
@@ -156,7 +164,7 @@ export async function processInterpretation(
 
   const catalog: CatalogEntry[] = await db.party.findMany({
     where: { status: "upcoming" },
-    select: { id: true, name: true, aliases: true, status: true },
+    select: { id: true, name: true, aliases: true, status: true, eventAt: true },
     orderBy: { id: "asc" },
   });
   const identity = {
@@ -183,12 +191,20 @@ export async function processInterpretation(
 
     const message = await db.message.findUniqueOrThrow({
       where: { id: job.messageId },
-      select: { text: true, sentAt: true, sender: { select: { role: true } } },
+      select: {
+        id: true,
+        groupId: true,
+        senderId: true,
+        text: true,
+        sentAt: true,
+        sender: { select: { role: true } },
+      },
     });
     const request: InterpretationRequest = {
       text: message.text,
       sentAt: message.sentAt,
       senderRole: message.sender.role,
+      context: await loadContext(db, message),
       catalog,
     };
     const hashes = requestHashes(request);
@@ -236,7 +252,7 @@ export async function processInterpretation(
       failed = outcome;
     } else {
       const output = outcome.result.output;
-      const { observations, errors } = validateInterpretation(output, request.text);
+      const { observations, errors } = validateInterpretation(output, request);
       if (observations) {
         const write = async (tx: Prisma.TransactionClient) => {
           const run = await tx.interpretationRun.create({

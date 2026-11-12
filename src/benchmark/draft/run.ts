@@ -18,14 +18,14 @@ import { buildLabel, createLabelStore, type LabelStore } from "../labels";
 import { GUIDE_VERSION, LABELING_GUIDE, renderItem, renderRetry } from "./guide";
 import {
   costUsd,
-  DraftError,
-  type DraftErrorKind,
-  type Drafter,
+  ModelError,
+  type ModelErrorKind,
+  type ModelClient,
   type Usage,
-} from "./providers";
+} from "@/llm/client";
 import { DRAFT_JSON_SCHEMA, draftToLabelBody } from "./schema";
 
-export const RETENTION: Record<Drafter["route"], string> = {
+export const RETENTION: Record<ModelClient["route"], string> = {
   api: "provider default, unverified",
   cursor: "Cursor Privacy Mode and provider default, unverified",
 };
@@ -34,7 +34,7 @@ export type DraftRunOptions = {
   data: LoadedExport;
   items: LabelItem[];
   seed: string;
-  drafters: Drafter[];
+  drafters: ModelClient[];
   /** `<sample>/drafts`, outside the repository. */
   dir: string;
   budgetUsd: number;
@@ -50,15 +50,15 @@ export type DraftRunOptions = {
   log?: (line: string) => void;
 };
 
-type FailureKind = DraftErrorKind | "invalid";
+type FailureKind = ModelErrorKind | "invalid";
 
 export type DrafterReport = {
   id: string;
-  provider: Drafter["provider"];
-  route: Drafter["route"];
+  provider: ModelClient["provider"];
+  route: ModelClient["route"];
   model: string;
-  params: Drafter["params"] | null;
-  price: Drafter["price"];
+  params: ModelClient["params"] | null;
+  price: ModelClient["price"];
   retention: string;
   alreadyDrafted: number;
   attempted: number;
@@ -112,7 +112,8 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
   const startedAt = now();
 
   mkdirSync(options.dir, { recursive: true, mode: 0o700 });
-  const failuresFile = (d: Drafter) => path.join(options.dir, `${d.id}.failures.jsonl`);
+  const failuresFile = (d: ModelClient) =>
+    path.join(options.dir, `${d.id}.failures.jsonl`);
 
   const stores = new Map<string, LabelStore>();
   const stats = new Map<string, DrafterReport & { latencies: number[] }>();
@@ -162,7 +163,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
   let stoppedForBudget = false;
   let abortedBy: string | null = null;
 
-  async function call(drafter: Drafter, user: string) {
+  async function call(drafter: ModelClient, user: string) {
     const s = stats.get(drafter.id)!;
     const estimate = costUsd(
       {
@@ -189,7 +190,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
     };
     const started = Date.now();
     try {
-      const reply = await drafter.draft({
+      const reply = await drafter.complete({
         system: LABELING_GUIDE,
         user,
         schema: DRAFT_JSON_SCHEMA,
@@ -199,18 +200,18 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
       record(reply.usage, started);
       return reply;
     } catch (error) {
-      record(error instanceof DraftError ? error.usage : undefined, started);
+      record(error instanceof ModelError ? error.usage : undefined, started);
       throw error;
     }
   }
 
-  async function callWithRetries(drafter: Drafter, user: string) {
+  async function callWithRetries(drafter: ModelClient, user: string) {
     for (let attempt = 0; ; attempt++) {
       try {
         return await call(drafter, user);
       } catch (error) {
         if (
-          !(error instanceof DraftError) ||
+          !(error instanceof ModelError) ||
           error.kind !== "transient" ||
           attempt >= transientRetries
         )
@@ -220,7 +221,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
     }
   }
 
-  function check(output: unknown, view: ItemView, drafter: Drafter) {
+  function check(output: unknown, view: ItemView, drafter: ModelClient) {
     const converted = draftToLabelBody(output, view);
     if (converted.errors.length > 0)
       return { annotation: null, errors: converted.errors };
@@ -237,7 +238,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
   }
 
   function fail(
-    drafter: Drafter,
+    drafter: ModelClient,
     messageId: string,
     kind: FailureKind,
     detail: string[],
@@ -251,7 +252,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
     );
   }
 
-  async function runTask({ drafter, item }: { drafter: Drafter; item: LabelItem }) {
+  async function runTask({ drafter, item }: { drafter: ModelClient; item: LabelItem }) {
     const view = buildItemView(options.data, item);
     const s = stats.get(drafter.id)!;
     s.attempted += 1;
@@ -281,7 +282,7 @@ export async function runDrafts(options: DraftRunOptions): Promise<DraftRunRepor
         stoppedForBudget = true;
         return;
       }
-      if (!(error instanceof DraftError)) throw error;
+      if (!(error instanceof ModelError)) throw error;
       fail(drafter, item.messageId, error.kind, [error.message]);
       if (error.kind === "fatal") abortedBy = `${drafter.id}: ${error.message}`;
     }

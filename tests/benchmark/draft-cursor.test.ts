@@ -1,14 +1,15 @@
 import { AuthenticationError, NetworkError, RateLimitError } from "@cursor/sdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  cursorDrafter,
+  creationTurn,
+  cursorClient,
   type CursorRunRequest,
   type CursorRunResult,
   extractJson,
   makerOf,
   translateSdkError,
 } from "@/benchmark/draft/cursor";
-import { DraftError } from "@/benchmark/draft/providers";
+import { ModelError } from "@/llm/client";
 
 const price = { inputPerMTok: 5, outputPerMTok: 25 };
 const call = {
@@ -30,24 +31,24 @@ function fakeRunner(result: CursorRunResult) {
   };
 }
 
-async function failureOf(promise: Promise<unknown>): Promise<DraftError> {
+async function failureOf(promise: Promise<unknown>): Promise<ModelError> {
   try {
     await promise;
   } catch (error) {
-    if (error instanceof DraftError) return error;
+    if (error instanceof ModelError) return error;
     throw error;
   }
-  throw new Error("expected a DraftError");
+  throw new Error("expected a ModelError");
 }
 
-describe("cursorDrafter", () => {
+describe("cursorClient", () => {
   it("names the model's maker and the route, and puts the schema in the system prompt", async () => {
     const { runner, seen } = fakeRunner({
       status: "finished",
       text: '{"ok":true}',
       usage,
     });
-    const drafter = cursorDrafter({
+    const drafter = cursorClient({
       key: "crsr_secret",
       model: "claude-opus-5-5",
       params: [{ id: "thinking", value: "high" }],
@@ -55,7 +56,7 @@ describe("cursorDrafter", () => {
       runner,
     });
 
-    expect(await drafter.draft(call)).toEqual({ output: { ok: true }, usage });
+    expect(await drafter.complete(call)).toEqual({ output: { ok: true }, usage });
     expect(drafter).toMatchObject({
       id: "cursor-claude-opus-5-5-thinking-high",
       provider: "anthropic",
@@ -79,12 +80,12 @@ describe("cursorDrafter", () => {
       },
     });
     const error = await failureOf(
-      cursorDrafter({
+      cursorClient({
         key: "k",
         model: "gpt-6.1-sol",
         price,
         runner: rejected.runner,
-      }).draft(call),
+      }).complete(call),
     );
     expect(error.kind).toBe("fatal");
   });
@@ -92,33 +93,56 @@ describe("cursorDrafter", () => {
   it("treats a cancelled or failed run as worth retrying and keeps the tokens it cost", async () => {
     const cancelled = fakeRunner({ status: "cancelled", usage });
     const timedOut = await failureOf(
-      cursorDrafter({
+      cursorClient({
         key: "k",
         model: "gpt-6.1-sol",
         price,
         runner: cancelled.runner,
-      }).draft(call),
+      }).complete(call),
     );
     expect([timedOut.kind, timedOut.usage]).toEqual(["transient", usage]);
 
     const failed = fakeRunner({ status: "error", error: { message: "stalled" } });
     const error = await failureOf(
-      cursorDrafter({
+      cursorClient({
         key: "k",
         model: "gpt-6.1-sol",
         price,
         runner: failed.runner,
-      }).draft(call),
+      }).complete(call),
     );
     expect([error.kind, error.message]).toEqual(["transient", "run error: stalled"]);
   });
 });
 
+describe("creationTurn", () => {
+  it("spaces agent creation to stay under Cursor's per-minute limit", async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now() + 60_000;
+      vi.setSystemTime(start);
+      const done: number[] = [];
+      const turns = [0, 1, 2].map((i) => creationTurn().then(() => done.push(i)));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(done).toEqual([0]);
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(done).toEqual([0, 1]);
+      await vi.advanceTimersByTimeAsync(2_500);
+      await Promise.all(turns);
+      expect(done).toEqual([0, 1, 2]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("makerOf", () => {
-  it("only accepts OpenAI and Anthropic models", () => {
+  it("names whose model answers, and refuses one it cannot tell", () => {
     expect(makerOf("claude-sonnet-5-5")).toBe("anthropic");
     expect(makerOf("gpt-6.1-sol")).toBe("openai");
-    expect(() => makerOf("composer-2.5")).toThrow(/neither/);
+    expect(makerOf("gemini-3.5-flash")).toBe("google");
+    expect(makerOf("composer-2.5")).toBe("cursor");
+    expect(() => makerOf("auto-smart")).toThrow(/not from a maker/);
   });
 });
 
@@ -127,13 +151,13 @@ describe("extractJson", () => {
     expect(extractJson('Here it is:\n```json\n{"a":[1]}\n```', usage)).toEqual({
       a: [1],
     });
-    expect(() => extractJson("I cannot help with that.", usage)).toThrow(DraftError);
+    expect(() => extractJson("I cannot help with that.", usage)).toThrow(ModelError);
   });
 });
 
 describe("translateSdkError", () => {
   it("stops on bad credentials or a spent usage cap and retries the network", () => {
-    const kind = (error: unknown) => (translateSdkError(error) as DraftError).kind;
+    const kind = (error: unknown) => (translateSdkError(error) as ModelError).kind;
     expect(kind(new AuthenticationError("Invalid API key"))).toBe("fatal");
     expect(
       kind(new RateLimitError("Usage limit exceeded", { isRetryable: false })),

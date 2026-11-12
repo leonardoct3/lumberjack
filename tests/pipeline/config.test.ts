@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadPipelineConfig } from "@/pipeline/config";
+import { interpreterFor } from "@/pipeline/interpreters";
 
 describe("loadPipelineConfig", () => {
   it("keeps the whole pipeline off unless it is asked for", () => {
@@ -9,6 +10,7 @@ describe("loadPipelineConfig", () => {
       projection: "off",
       recommendations: "off",
       interpreter: "rules",
+      model: null,
       maxCallsPerPass: 50,
       dailyBudgetUsd: 0,
       leaseMs: 300_000,
@@ -33,6 +35,37 @@ describe("loadPipelineConfig", () => {
     ]) {
       expect(() => loadPipelineConfig({ [name]: "shadow" })).toThrow(new RegExp(name));
     }
+  });
+
+  it("needs a model and its price for a model interpreter, and a key to build it", () => {
+    expect(() => loadPipelineConfig({ PIPELINE_INTERPRETER: "openai" })).toThrow(
+      /PIPELINE_MODEL[\s\S]*PIPELINE_MODEL_PRICE/,
+    );
+    expect(() =>
+      loadPipelineConfig({
+        PIPELINE_INTERPRETER: "openai",
+        PIPELINE_MODEL: "gpt-5.6-luna",
+        PIPELINE_MODEL_PRICE: "cheap",
+      }),
+    ).toThrow(/PIPELINE_MODEL_PRICE/);
+    const config = loadPipelineConfig({
+      PIPELINE_INTERPRETER: "openai",
+      PIPELINE_MODEL: "gpt-5.6-luna",
+      PIPELINE_MODEL_PRICE: "0.2/1.2/0.02",
+    });
+    expect(config.model).toEqual({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      price: { inputPerMTok: 0.2, outputPerMTok: 1.2, cachedInputPerMTok: 0.02 },
+    });
+    expect(() => interpreterFor(config, {})).toThrow(/OPENAI_API_KEY/);
+    expect(interpreterFor(config, { OPENAI_API_KEY: "sk-test" })).toMatchObject({
+      name: "model",
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      paid: true,
+    });
+    expect(interpreterFor(loadPipelineConfig({}), {}).name).toBe("rules");
   });
 
   it("reads limits as numbers and rejects nonsense", () => {
